@@ -1,0 +1,17 @@
+{
+  "name": "walkie-talkie",
+  "version": "1.0.0",
+  "description": "여러 사람이 함께 쓰는 웹 무전기 (대기실·방·채널·PTT)",
+  "main": "server.js",
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1",
+    "start": "node server.js"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "dependencies": {
+    "express": "^4.22.3",
+    "socket.io": "^4.8.4"
+  }
+}

@@ -1,0 +1,675 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<meta name="theme-color" content="#2b2f2c">
+<title>모두의 무전기</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans+KR:wght@400;500;700&family=IBM+Plex+Mono:wght@500;600&display=swap">
+<style>
+/* 레이아웃: 왼쪽은 명단·채널(정보), 오른쪽은 무전기 본체(조작). 폰에서는 본체가 맨 아래 고정 */
+:root{
+  --bg:#e7e9e4;          /* 국방색 기운이 살짝 도는 회색 */
+  --panel:#f6f7f3;
+  --ink:#1d221f;
+  --muted:#5e665f;
+  --line:#cfd4cb;
+  --device:#2b2f2c;      /* 무전기 몸체 */
+  --device-ink:#e9ece6;
+  --lcd:#d9c27a;         /* 호박색 백라이트 LCD */
+  --lcd-ink:#2a2410;
+  --ptt:#e2711d;         /* 송신 버튼 주황 */
+  --tx:#d8343a;
+  --rx:#2f8a57;
+  --accent:#3b6e5a;
+  --font-body:"IBM Plex Sans KR",system-ui,-apple-system,"Apple SD Gothic Neo","Malgun Gothic",sans-serif;
+  --font-mono:"IBM Plex Mono",ui-monospace,"SFMono-Regular",Menlo,monospace;
+  --r:10px;
+}
+@media (prefers-color-scheme: dark){:root:not([data-theme="light"]){
+  --bg:#141714;--panel:#1d211d;--ink:#e6e9e3;--muted:#9aa39a;--line:#2f352f;
+  --device:#0d0f0d;--device-ink:#e9ece6;--lcd:#c9b064;--lcd-ink:#211c0b;--accent:#7fb89f;color-scheme:dark}}
+:root[data-theme="dark"]{
+  --bg:#141714;--panel:#1d211d;--ink:#e6e9e3;--muted:#9aa39a;--line:#2f352f;
+  --device:#0d0f0d;--device-ink:#e9ece6;--lcd:#c9b064;--lcd-ink:#211c0b;--accent:#7fb89f;color-scheme:dark}
+
+*{box-sizing:border-box}
+html,body{height:100%}
+body{margin:0;background:var(--bg);color:var(--ink);font:15px/1.55 var(--font-body);
+  -webkit-tap-highlight-color:transparent}
+[hidden]{display:none!important}
+button,input{font:inherit;color:inherit}
+button{cursor:pointer}
+:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+h1,h2,h3{margin:0;text-wrap:balance;line-height:1.25}
+.wrap{max-width:1080px;margin:0 auto;padding-block:20px 32px;
+  padding-left:max(16px,env(safe-area-inset-left,0px));padding-right:max(16px,env(safe-area-inset-right,0px))}
+.label{font-size:12px;letter-spacing:.06em;color:var(--muted);font-weight:500}
+.mono{font-family:var(--font-mono);font-variant-numeric:tabular-nums}
+.btn{border:1px solid var(--line);background:var(--panel);border-radius:8px;padding:8px 14px;font-weight:500}
+.btn:hover{border-color:var(--muted)}
+.btn.primary{background:var(--ink);color:var(--bg);border-color:var(--ink)}
+.btn.danger{color:var(--tx);border-color:color-mix(in srgb,var(--tx) 40%,var(--line))}
+.btn.small{padding:4px 10px;font-size:13px}
+.input{width:100%;border:1px solid var(--line);background:var(--bg);border-radius:8px;padding:10px 12px}
+.input:focus{outline:none;border-color:var(--accent)}
+
+/* 상단 바 */
+.top{display:flex;align-items:center;gap:12px;justify-content:space-between;margin-bottom:18px;flex-wrap:wrap}
+.brand{display:flex;align-items:center;gap:10px}
+.brand h1{font-size:20px;font-weight:700}
+.brand .ant{width:6px;height:26px;background:var(--device);border-radius:3px 3px 1px 1px;position:relative}
+.brand .ant::after{content:"";position:absolute;left:-3px;bottom:-6px;width:12px;height:8px;background:var(--device);border-radius:2px}
+.status{display:flex;align-items:center;gap:8px;font-size:13px;color:var(--muted)}
+.dot{width:8px;height:8px;border-radius:50%;background:var(--muted)}
+.dot.on{background:var(--rx)}
+
+/* 입장 화면 */
+.entry{max-width:420px;margin:8vh auto 0;display:grid;gap:16px}
+.entry .card{background:var(--panel);border:1px solid var(--line);border-radius:14px;padding:22px;display:grid;gap:14px}
+.entry p{margin:0;color:var(--muted)}
+
+/* 대기실 */
+.grid{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1.4fr);gap:18px}
+@media (max-width:760px){.grid{grid-template-columns:1fr}}
+.box{background:var(--panel);border:1px solid var(--line);border-radius:14px;padding:16px;min-width:0}
+.box-head{display:flex;align-items:baseline;justify-content:space-between;gap:8px;margin-bottom:10px}
+.box-head h2{font-size:16px}
+.people{list-style:none;margin:0;padding:0;display:grid;gap:2px}
+.person{display:flex;align-items:center;gap:10px;padding:7px 4px;border-radius:8px;min-width:0}
+.avatar{flex:none;width:28px;height:28px;border-radius:50%;display:grid;place-items:center;font-size:13px;font-weight:700;color:#fff;
+  background:hsl(var(--h) 38% 42%)}
+.person .nm{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.person .where{margin-left:auto;font-size:12px;color:var(--muted);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:45%}
+.tag{font-size:11px;padding:1px 6px;border-radius:999px;border:1px solid var(--line);color:var(--muted);white-space:nowrap}
+.tag.me{border-color:var(--accent);color:var(--accent)}
+.tag.tx{background:var(--tx);border-color:var(--tx);color:#fff}
+.group-label{margin:10px 4px 2px}
+.empty{color:var(--muted);font-size:14px;padding:10px 4px}
+
+.rooms{list-style:none;margin:0;padding:0;display:grid;gap:8px}
+.room{display:flex;align-items:center;gap:12px;border:1px solid var(--line);border-radius:var(--r);padding:12px 14px;background:var(--bg);min-width:0}
+.room .info{min-width:0;flex:1}
+.room .name{font-weight:700;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.room .meta{font-size:12px;color:var(--muted)}
+.newroom{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,.7fr) auto;gap:8px;margin-top:14px}
+@media (max-width:480px){.newroom{grid-template-columns:1fr 1fr}.newroom .btn{grid-column:1/-1}}
+
+/* 방 화면 */
+.roomview{display:grid;grid-template-columns:minmax(0,1fr) 360px;gap:18px;align-items:start}
+@media (max-width:860px){.roomview{grid-template-columns:1fr}}
+.side{display:grid;gap:18px;min-width:0}
+.channels{list-style:none;margin:0;padding:0;display:grid;gap:6px}
+.chan{display:flex;align-items:center;gap:10px;border:1px solid var(--line);border-radius:var(--r);padding:10px 12px;background:var(--bg);min-width:0}
+.chan.active{border-color:var(--accent);box-shadow:inset 3px 0 0 var(--accent)}
+.chan.locked{opacity:.55}
+.chan .num{font-family:var(--font-mono);font-size:13px;color:var(--muted);width:34px;flex:none}
+.chan .info{flex:1;min-width:0}
+.chan .name{font-weight:600;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.chan .meta{font-size:12px;color:var(--muted);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.chan .acts{display:flex;gap:6px;flex:none}
+
+/* 무전기 본체 */
+.device{position:sticky;top:max(12px,env(safe-area-inset-top,0px));background:var(--device);color:var(--device-ink);
+  border-radius:26px 26px 20px 20px;padding:18px 18px 22px;box-shadow:0 2px 0 rgba(0,0,0,.25),0 18px 40px -18px rgba(0,0,0,.45)}
+.grille{height:46px;margin:2px 6px 14px;border-radius:10px;
+  background:repeating-linear-gradient(90deg,rgba(255,255,255,.09) 0 3px,transparent 3px 8px)}
+.lcd{background:var(--lcd);color:var(--lcd-ink);border-radius:8px;padding:12px 14px;font-family:var(--font-mono);
+  box-shadow:inset 0 2px 6px rgba(0,0,0,.25);min-height:118px;display:grid;gap:4px}
+.lcd .row{display:flex;justify-content:space-between;gap:8px;font-size:12px;font-weight:600}
+.lcd .ch{font-size:30px;font-weight:600;line-height:1.1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-family:var(--font-mono),var(--font-body)}
+.lcd .chname{font-family:var(--font-body);font-weight:700;font-size:15px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.lcd .state{font-size:13px;font-weight:600;min-height:20px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.meter{display:flex;gap:3px;align-items:flex-end;height:14px}
+.meter i{display:block;width:5px;background:var(--lcd-ink);opacity:.18;border-radius:1px}
+.meter i.lit{opacity:.85}
+.ptt-wrap{display:grid;place-items:center;padding:22px 0 8px}
+.ptt{width:min(68vw,210px);aspect-ratio:1;border-radius:50%;border:0;background:var(--ptt);color:#1b1206;
+  font-weight:700;font-size:20px;letter-spacing:.04em;display:grid;place-items:center;
+  box-shadow:0 6px 0 color-mix(in srgb,var(--ptt) 55%,#000),inset 0 -6px 14px rgba(0,0,0,.18);
+  touch-action:none;user-select:none;-webkit-user-select:none;-webkit-touch-callout:none;transition:transform .05s,box-shadow .05s}
+.ptt small{display:block;font-size:12px;font-weight:500;letter-spacing:0;opacity:.8}
+.ptt:disabled{filter:grayscale(.7) brightness(.7);cursor:not-allowed}
+.ptt.down{transform:translateY(5px);box-shadow:0 1px 0 color-mix(in srgb,var(--ptt) 55%,#000),inset 0 -2px 8px rgba(0,0,0,.25)}
+.ptt.tx{background:var(--tx);color:#fff;box-shadow:0 1px 0 #6d1418,0 0 0 8px color-mix(in srgb,var(--tx) 30%,transparent)}
+.dev-row{display:flex;align-items:center;justify-content:space-between;gap:10px;font-size:13px;margin-top:10px;color:color-mix(in srgb,var(--device-ink) 75%,transparent)}
+.dev-row input[type=range]{flex:1;accent-color:var(--ptt)}
+.led{width:10px;height:10px;border-radius:50%;background:#444;flex:none}
+.led.tx{background:var(--tx);box-shadow:0 0 10px var(--tx)}
+.led.rx{background:#46c27d;box-shadow:0 0 10px #46c27d}
+.hint{font-size:12px;color:color-mix(in srgb,var(--device-ink) 60%,transparent);text-align:center;margin-top:6px}
+
+/* 대화상자 */
+dialog{border:1px solid var(--line);border-radius:14px;background:var(--panel);color:var(--ink);padding:0;width:min(440px,calc(100vw - 32px))}
+dialog::backdrop{background:rgba(10,12,10,.45)}
+.dlg{padding:20px;display:grid;gap:14px}
+.dlg h3{font-size:17px}
+.choice{display:flex;gap:8px;flex-wrap:wrap}
+.choice label{display:flex;align-items:center;gap:6px;border:1px solid var(--line);border-radius:8px;padding:7px 10px;cursor:pointer}
+.picklist{display:grid;gap:4px;max-height:220px;overflow:auto;border:1px solid var(--line);border-radius:8px;padding:6px}
+.picklist label{display:flex;align-items:center;gap:8px;padding:5px 6px;border-radius:6px}
+.dlg-acts{display:flex;justify-content:flex-end;gap:8px;flex-wrap:wrap}
+.dlg-acts .spacer{flex:1}
+.err{color:var(--tx);font-size:13px;min-height:1em;margin:0}
+
+.toast{position:fixed;left:50%;bottom:calc(20px + env(safe-area-inset-bottom,0px));transform:translateX(-50%);
+  background:var(--ink);color:var(--bg);padding:10px 16px;border-radius:10px;font-size:14px;max-width:calc(100vw - 32px);z-index:50}
+
+@media (max-width:860px){
+  .device{position:static;order:-1;padding:14px 14px 16px}
+  .grille{display:none}
+  .lcd{min-height:0}
+  .ptt-wrap{padding:16px 0 4px}
+  .ptt{width:min(46vw,170px)}
+}
+@media (prefers-reduced-motion:reduce){*{transition:none!important}}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header class="top">
+    <div class="brand"><span class="ant" aria-hidden="true"></span><h1>모두의 무전기</h1></div>
+    <div class="status"><span class="dot" id="connDot"></span><span id="connText">연결 중…</span></div>
+  </header>
+
+  <!-- 1. 입장 -->
+  <section id="viewEntry" class="entry" hidden>
+    <div class="card">
+      <h2 style="font-size:22px">호출부호를 정해 주세요</h2>
+      <p>대기실에 이 이름으로 표시돼요. 방에 들어가면 같은 방 사람끼리만 채널을 쓸 수 있어요.</p>
+      <form id="entryForm" style="display:grid;gap:10px">
+        <label class="label" for="nickInput">닉네임 (16자까지)</label>
+        <input class="input" id="nickInput" maxlength="16" autocomplete="nickname" placeholder="예: 알파1" required>
+        <button class="btn primary" type="submit">대기실 입장</button>
+        <p class="err" id="entryErr"></p>
+      </form>
+    </div>
+  </section>
+
+  <!-- 2. 대기실 -->
+  <section id="viewLobby" hidden>
+    <div class="grid">
+      <div class="box">
+        <div class="box-head"><h2>접속자 명단</h2><span class="label mono" id="userCount"></span></div>
+        <div id="peopleList"></div>
+      </div>
+      <div class="box">
+        <div class="box-head"><h2>무전 방</h2><span class="label mono" id="roomCount"></span></div>
+        <ul class="rooms" id="roomList"></ul>
+        <form class="newroom" id="newRoomForm">
+          <input class="input" id="newRoomName" maxlength="24" placeholder="새 방 이름" aria-label="새 방 이름" required>
+          <input class="input" id="newRoomPass" maxlength="32" placeholder="비밀번호(선택)" aria-label="비밀번호(선택)" type="password" autocomplete="new-password">
+          <button class="btn primary" type="submit">방 만들기</button>
+        </form>
+        <p class="err" id="lobbyErr"></p>
+      </div>
+    </div>
+  </section>
+
+  <!-- 3. 방 -->
+  <section id="viewRoom" hidden>
+    <div class="roomview">
+      <div class="side">
+        <div class="box">
+          <div class="box-head" style="align-items:center">
+            <div style="min-width:0">
+              <div class="label">방</div>
+              <h2 id="roomTitle" style="font-size:20px;overflow:hidden;text-overflow:ellipsis"></h2>
+            </div>
+            <button class="btn small" id="leaveRoomBtn">대기실로 나가기</button>
+          </div>
+        </div>
+        <div class="box">
+          <div class="box-head"><h2>채널</h2><button class="btn small" id="newChanBtn">+ 채널 만들기</button></div>
+          <ul class="channels" id="chanList"></ul>
+          <p class="label" style="margin:10px 2px 0">채널은 이 방에 들어온 사람만 볼 수 있어요. ‘선택 인원’ 채널은 지정한 사람만 듣고 말할 수 있어요.</p>
+        </div>
+        <div class="box">
+          <div class="box-head"><h2>방 인원</h2><span class="label mono" id="memberCount"></span></div>
+          <ul class="people" id="memberList"></ul>
+        </div>
+      </div>
+
+      <aside class="device" aria-label="무전기">
+        <div class="grille" aria-hidden="true"></div>
+        <div class="lcd" aria-live="polite">
+          <div class="row"><span id="lcdRoom">—</span><span id="lcdMode">STBY</span></div>
+          <div class="ch" id="lcdCh">CH 01</div>
+          <div class="chname" id="lcdChName">공용</div>
+          <div class="row" style="align-items:flex-end">
+            <span class="state" id="lcdState">대기 중</span>
+            <span class="meter" id="meter" aria-hidden="true"></span>
+          </div>
+        </div>
+        <div class="ptt-wrap">
+          <button class="ptt" id="pttBtn" type="button" aria-label="누르고 있는 동안 말하기">
+            <span>PTT<small id="pttSub">마이크 켜기</small></span>
+          </button>
+        </div>
+        <div class="dev-row"><span class="led" id="led"></span><span>음량</span><input type="range" id="vol" min="0" max="2" step="0.05" value="1" aria-label="수신 음량"></div>
+        <div class="hint">버튼을 누르고 있는 동안 송신돼요 · 키보드는 스페이스바</div>
+      </aside>
+    </div>
+  </section>
+</div>
+
+<!-- 비밀번호 -->
+<dialog id="passDlg">
+  <form class="dlg" method="dialog" id="passForm">
+    <h3 id="passTitle">비밀번호가 있는 방이에요</h3>
+    <input class="input" id="passInput" type="password" maxlength="32" placeholder="비밀번호" aria-label="비밀번호" autocomplete="off">
+    <p class="err" id="passErr"></p>
+    <div class="dlg-acts"><button class="btn" value="cancel" formnovalidate>취소</button><button class="btn primary" id="passOk" value="ok">입장</button></div>
+  </form>
+</dialog>
+
+<!-- 채널 설정 -->
+<dialog id="chanDlg">
+  <form class="dlg" method="dialog" id="chanForm">
+    <h3 id="chanDlgTitle">채널 만들기</h3>
+    <div style="display:grid;gap:6px">
+      <label class="label" for="chanName">채널 이름</label>
+      <input class="input" id="chanName" maxlength="16" placeholder="예: 1조, 무대팀" required>
+    </div>
+    <div style="display:grid;gap:6px" id="chanAccessBox">
+      <span class="label">사용할 수 있는 사람</span>
+      <div class="choice">
+        <label><input type="radio" name="access" value="all" id="accAll" checked> 방 인원 전체</label>
+        <label><input type="radio" name="access" value="some" id="accSome"> 선택한 인원만</label>
+      </div>
+      <div class="picklist" id="pickList" hidden></div>
+    </div>
+    <p class="err" id="chanErr"></p>
+    <div class="dlg-acts">
+      <button class="btn danger" type="button" id="chanDelete" hidden>채널 삭제</button>
+      <span class="spacer"></span>
+      <button class="btn" value="cancel" formnovalidate>취소</button>
+      <button class="btn primary" value="ok" id="chanOk">저장</button>
+    </div>
+  </form>
+</dialog>
+
+<div class="toast" id="toast" hidden></div>
+
+<script src="/socket.io/socket.io.js"></script>
+<script>
+(() => {
+  'use strict';
+  const $ = (id) => document.getElementById(id);
+  const socket = io({ transports: ['websocket', 'polling'] });
+
+  const S = { me: null, lobby: { users: [], rooms: [] }, room: null, talking: false, rxFrom: null };
+  const store = {
+    get(k) { try { return localStorage.getItem(k); } catch { return null; } },
+    set(k, v) { try { localStorage.setItem(k, v); } catch {} },
+  };
+
+  // ---------- 공통 UI ----------
+  let toastTimer;
+  function toast(msg) {
+    const t = $('toast');
+    t.textContent = msg; t.hidden = false;
+    clearTimeout(toastTimer); toastTimer = setTimeout(() => (t.hidden = true), 2800);
+  }
+  function show(view) {
+    for (const v of ['viewEntry', 'viewLobby', 'viewRoom']) $(v).hidden = v !== view;
+  }
+  function el(tag, attrs = {}, ...kids) {
+    const n = document.createElement(tag);
+    for (const [k, v] of Object.entries(attrs)) {
+      if (k === 'class') n.className = v;
+      else if (k === 'style') n.style.cssText = v;
+      else if (k.startsWith('on')) n.addEventListener(k.slice(2), v);
+      else if (v !== false && v != null) n.setAttribute(k, v === true ? '' : v);
+    }
+    for (const kid of kids.flat()) if (kid != null && kid !== false) n.append(kid instanceof Node ? kid : document.createTextNode(String(kid)));
+    return n;
+  }
+  const avatar = (u) => el('span', { class: 'avatar', style: `--h:${u.color}` }, [...u.nick][0] || '?');
+  const chNo = (i) => 'CH ' + String(i + 1).padStart(2, '0');
+  const nickOf = (id) => S.room?.members.find((m) => m.id === id)?.nick || S.lobby.users.find((u) => u.id === id)?.nick || '알 수 없음';
+  const emitAck = (ev, payload) => new Promise((res) => socket.timeout(8000).emit(ev, payload, (err, r) => res(err ? { ok: false, error: '서버 응답이 없어요. 연결을 확인해 주세요.' } : r)));
+
+  // ---------- 연결 ----------
+  socket.on('connect', async () => {
+    $('connDot').classList.add('on'); $('connText').textContent = '연결됨';
+    const nick = store.get('wt.nick');
+    if (nick) {
+      const r = await emitAck('hello', { nick });
+      if (r.ok) { S.me = r.me; S.lobby = r.lobby; S.room = null; renderLobby(); show('viewLobby'); if (S.wasInRoom) toast('연결이 다시 이어졌어요. 방에 다시 들어가 주세요.'); return; }
+    }
+    $('nickInput').value = nick || '';
+    show('viewEntry');
+  });
+  socket.on('disconnect', () => {
+    $('connDot').classList.remove('on'); $('connText').textContent = '연결 끊김 · 다시 연결 중…';
+    S.wasInRoom = !!S.room; stopTalking(true);
+  });
+  socket.on('toast', toast);
+
+  $('entryForm').addEventListener('submit', async (e) => {
+    e.preventDefault();
+    const nick = $('nickInput').value.trim();
+    const r = await emitAck('hello', { nick });
+    if (!r.ok) { $('entryErr').textContent = r.error; return; }
+    store.set('wt.nick', nick);
+    S.me = r.me; S.lobby = r.lobby; renderLobby(); show('viewLobby');
+  });
+
+  // ---------- 대기실 ----------
+  socket.on('lobby', (l) => { S.lobby = l; renderLobby(); });
+
+  function renderLobby() {
+    const users = S.lobby.users;
+    $('userCount').textContent = `${users.length}명 접속`;
+    $('roomCount').textContent = `${S.lobby.rooms.length}개`;
+    const waiting = users.filter((u) => !u.roomId);
+    const inRooms = users.filter((u) => u.roomId);
+    const personRow = (u) => el('li', { class: 'person' }, avatar(u), el('span', { class: 'nm' }, u.nick),
+      u.id === S.me?.id ? el('span', { class: 'tag me' }, '나') : null,
+      el('span', { class: 'where' }, u.roomId ? u.roomName : '대기실'));
+    $('peopleList').replaceChildren(
+      el('div', { class: 'label group-label' }, `대기실 · ${waiting.length}명`),
+      waiting.length ? el('ul', { class: 'people' }, waiting.map(personRow)) : el('div', { class: 'empty' }, '대기실에 있는 사람이 없어요.'),
+      el('div', { class: 'label group-label' }, `방에 들어간 사람 · ${inRooms.length}명`),
+      inRooms.length ? el('ul', { class: 'people' }, inRooms.map(personRow)) : el('div', { class: 'empty' }, '아직 방에 들어간 사람이 없어요.'),
+    );
+    const rooms = S.lobby.rooms;
+    $('roomList').replaceChildren(...(rooms.length ? rooms.map((r) =>
+      el('li', { class: 'room' },
+        el('div', { class: 'info' },
+          el('div', { class: 'name' }, r.name),
+          el('div', { class: 'meta' }, `방장 ${r.ownerNick} · ${r.count}명`, r.locked ? ' · 🔒 비밀번호' : '')),
+        el('button', { class: 'btn small primary', onclick: () => joinRoom(r) }, S.room?.id === r.id ? '돌아가기' : '입장'))
+    ) : [el('li', { class: 'empty' }, '열린 방이 없어요. 아래에서 첫 방을 만들어 보세요.')]));
+  }
+
+  $('newRoomForm').addEventListener('submit', async (e) => {
+    e.preventDefault();
+    await ensureAudio();
+    const r = await emitAck('room:create', { name: $('newRoomName').value, password: $('newRoomPass').value });
+    if (!r.ok) { $('lobbyErr').textContent = r.error; return; }
+    $('newRoomName').value = ''; $('newRoomPass').value = ''; $('lobbyErr').textContent = '';
+    enterRoom(r.room);
+  });
+
+  async function joinRoom(r, password) {
+    await ensureAudio();
+    if (r.locked && password === undefined) return askPassword(r);
+    const res = await emitAck('room:join', { roomId: r.id, password });
+    if (!res.ok) {
+      if (res.needPassword) return askPassword(r, res.error);
+      $('lobbyErr').textContent = res.error; return;
+    }
+    enterRoom(res.room);
+  }
+
+  function askPassword(r, err = '') {
+    $('passTitle').textContent = `‘${r.name}’ 방 비밀번호`;
+    $('passErr').textContent = err; $('passInput').value = '';
+    const d = $('passDlg');
+    d.onclose = () => { if (d.returnValue === 'ok') joinRoom(r, $('passInput').value); };
+    d.showModal(); $('passInput').focus();
+  }
+
+  // ---------- 방 ----------
+  socket.on('room', (room) => { if (S.room && room.id === S.room.id) { S.room = room; renderRoom(); } });
+
+  function enterRoom(room) { S.room = room; renderRoom(); show('viewRoom'); requestWakeLock(); }
+
+  $('leaveRoomBtn').addEventListener('click', async () => {
+    stopTalking(); await emitAck('room:leave'); S.room = null; renderLobby(); show('viewLobby');
+  });
+
+  function myChannel() { const me = S.room?.members.find((m) => m.id === S.me.id); return S.room?.channels.find((c) => c.id === me?.channelId); }
+
+  function renderRoom() {
+    const room = S.room; if (!room) return;
+    const meId = S.me.id, isOwner = room.ownerId === meId;
+    $('roomTitle').textContent = room.name;
+    $('memberCount').textContent = `${room.members.length}명`;
+    const cur = myChannel();
+
+    $('chanList').replaceChildren(...room.channels.map((c, i) => {
+      const here = room.members.filter((m) => m.channelId === c.id);
+      const access = c.members === null ? '방 인원 전체' : `선택 인원 ${c.members.length}명`;
+      const canEdit = c.createdBy === meId || isOwner;
+      return el('li', { class: `chan${cur?.id === c.id ? ' active' : ''}${c.allowed ? '' : ' locked'}` },
+        el('span', { class: 'num' }, String(i + 1).padStart(2, '0')),
+        el('div', { class: 'info' },
+          el('div', { class: 'name' }, c.name, c.members !== null ? ' 🔒' : ''),
+          el('div', { class: 'meta' }, `${access} · 지금 ${here.length}명`, c.talker ? ` · ${nickOf(c.talker)} 송신 중` : '')),
+        el('div', { class: 'acts' },
+          canEdit ? el('button', { class: 'btn small', onclick: () => openChanDlg(c), 'aria-label': `${c.name} 설정` }, '설정') : null,
+          cur?.id === c.id ? el('span', { class: 'tag me' }, '사용 중')
+            : c.allowed ? el('button', { class: 'btn small primary', onclick: () => switchChannel(c) }, '전환')
+            : el('span', { class: 'tag' }, '권한 없음')));
+    }));
+
+    $('memberList').replaceChildren(...room.members.map((m) => {
+      const ch = room.channels.find((c) => c.id === m.channelId);
+      const talking = room.channels.some((c) => c.talker === m.id);
+      return el('li', { class: 'person' }, avatar(m), el('span', { class: 'nm' }, m.nick),
+        m.id === meId ? el('span', { class: 'tag me' }, '나') : null,
+        m.id === room.ownerId ? el('span', { class: 'tag' }, '방장') : null,
+        talking ? el('span', { class: 'tag tx' }, '송신') : null,
+        el('span', { class: 'where' }, ch ? ch.name : ''));
+    }));
+
+    // LCD
+    const idx = room.channels.findIndex((c) => c.id === cur?.id);
+    $('lcdRoom').textContent = room.name;
+    $('lcdCh').textContent = idx >= 0 ? chNo(idx) : 'CH --';
+    $('lcdChName').textContent = cur ? `${cur.name} · ${room.members.filter((m) => m.channelId === cur.id).length}명` : '';
+    updateRadioState();
+  }
+
+  function updateRadioState() {
+    const cur = myChannel();
+    const other = cur?.talker && cur.talker !== S.me.id ? cur.talker : null;
+    const ptt = $('pttBtn'), led = $('led');
+    ptt.classList.toggle('tx', S.talking);
+    led.className = 'led' + (S.talking ? ' tx' : other ? ' rx' : '');
+    $('lcdMode').textContent = S.talking ? 'TX' : other ? 'RX' : 'STBY';
+    $('lcdState').textContent = S.talking ? '송신 중…' : other ? `◀ ${nickOf(other)}` : '대기 중';
+    $('pttSub').textContent = !audio.mic ? '마이크 켜기' : S.talking ? '말하는 중' : other ? '수신 중' : '누르고 말하기';
+    ptt.disabled = !!other && !S.talking;
+  }
+
+  async function switchChannel(c) {
+    stopTalking();
+    const r = await emitAck('channel:join', { channelId: c.id });
+    if (!r.ok) toast(r.error);
+  }
+
+  // 채널 설정 대화상자
+  let editing = null;
+  function openChanDlg(c = null) {
+    editing = c;
+    const room = S.room;
+    $('chanDlgTitle').textContent = c ? '채널 설정' : '채널 만들기';
+    $('chanName').value = c ? c.name : '';
+    $('chanErr').textContent = '';
+    $('chanDelete').hidden = !c || c.isDefault;
+    $('chanAccessBox').hidden = !!c?.isDefault;
+    const some = c && c.members !== null;
+    $('accAll').checked = !some; $('accSome').checked = !!some;
+    const selected = new Set(c?.members || []);
+    const owner = c ? c.createdBy : S.me.id;
+    $('pickList').replaceChildren(...room.members.map((m) =>
+      el('label', {}, el('input', { type: 'checkbox', value: m.id, checked: m.id === owner || selected.has(m.id), disabled: m.id === owner }),
+        avatar(m), m.nick, m.id === S.me.id ? ' (나)' : '', m.id === owner && m.id !== S.me.id ? ' (만든 사람)' : '')));
+    $('pickList').hidden = !some;
+    $('chanDlg').showModal(); $('chanName').focus();
+  }
+  for (const r of document.querySelectorAll('input[name=access]')) r.addEventListener('change', () => ($('pickList').hidden = !$('accSome').checked));
+  $('newChanBtn').addEventListener('click', () => openChanDlg(null));
+  $('chanForm').addEventListener('submit', async (e) => {
+    if (e.submitter?.value !== 'ok') return;
+    e.preventDefault();
+    const name = $('chanName').value.trim();
+    const members = $('accSome').checked ? [...$('pickList').querySelectorAll('input:checked')].map((i) => i.value) : null;
+    const r = editing
+      ? await emitAck('channel:update', { channelId: editing.id, name, members: editing.isDefault ? undefined : members })
+      : await emitAck('channel:create', { name, members });
+    if (!r.ok) { $('chanErr').textContent = r.error; return; }
+    $('chanDlg').close();
+    toast(editing ? '채널 설정을 저장했어요.' : `‘${name}’ 채널을 만들고 들어갔어요.`);
+  });
+  let delArmed = false;
+  $('chanDelete').addEventListener('click', async () => {
+    if (!delArmed) { delArmed = true; $('chanDelete').textContent = '한 번 더 누르면 삭제'; setTimeout(() => { delArmed = false; $('chanDelete').textContent = '채널 삭제'; }, 3000); return; }
+    delArmed = false; $('chanDelete').textContent = '채널 삭제';
+    const r = await emitAck('channel:delete', { channelId: editing.id });
+    if (!r.ok) { $('chanErr').textContent = r.error; return; }
+    $('chanDlg').close(); toast('채널을 삭제했어요.');
+  });
+
+  // ---------- 오디오 ----------
+  const RATE = 16000;
+  const audio = { ctx: null, mic: null, node: null, gain: null, track: null, play: new Map(), carry: new Float32Array(0), pos: 0 };
+
+  async function ensureAudio() {
+    if (!audio.ctx) {
+      const AC = window.AudioContext || window.webkitAudioContext;
+      audio.ctx = new AC();
+      audio.gain = audio.ctx.createGain();
+      audio.gain.gain.value = Number($('vol').value);
+      audio.gain.connect(audio.ctx.destination);
+    }
+    if (audio.ctx.state === 'suspended') await audio.ctx.resume().catch(() => {});
+  }
+
+  async function ensureMic() {
+    await ensureAudio();
+    if (audio.mic) return true;
+    if (!navigator.mediaDevices?.getUserMedia) { toast('이 브라우저(또는 http 주소)에서는 마이크를 쓸 수 없어요. https 주소로 접속해 주세요.'); return false; }
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({ audio: { echoCancellation: true, noiseSuppression: true, autoGainControl: true, channelCount: 1 } });
+      await audio.ctx.audioWorklet.addModule('/capture-worklet.js');
+      const src = audio.ctx.createMediaStreamSource(stream);
+      const node = new AudioWorkletNode(audio.ctx, 'capture-processor');
+      node.port.onmessage = (e) => onMicChunk(e.data);
+      const mute = audio.ctx.createGain(); mute.gain.value = 0;
+      src.connect(node); node.connect(mute); mute.connect(audio.ctx.destination);
+      audio.mic = stream; audio.node = node; audio.track = stream.getAudioTracks()[0];
+      audio.track.enabled = false;
+      updateRadioState();
+      return true;
+    } catch (err) {
+      toast('마이크 권한이 필요해요. 브라우저 주소창의 권한 설정에서 마이크를 허용해 주세요.');
+      return false;
+    }
+  }
+
+  // 입력 샘플레이트 → 16kHz 다운샘플(구간 평균) → Int16
+  let sendBuf = new Int16Array(640), sendN = 0;
+  function onMicChunk(f32) {
+    if (!S.talking) { audio.carry = new Float32Array(0); audio.pos = 0; return; }
+    const ratio = audio.ctx.sampleRate / RATE;
+    const inp = new Float32Array(audio.carry.length + f32.length);
+    inp.set(audio.carry); inp.set(f32, audio.carry.length);
+    let pos = audio.pos, peak = 0;
+    while (pos + ratio <= inp.length) {
+      const a = Math.floor(pos), b = Math.floor(pos + ratio);
+      let s = 0; for (let i = a; i < b; i++) s += inp[i];
+      const v = Math.max(-1, Math.min(1, s / Math.max(1, b - a)));
+      peak = Math.max(peak, Math.abs(v));
+      sendBuf[sendN++] = v < 0 ? v * 0x8000 : v * 0x7fff;
+      if (sendN === sendBuf.length) { socket.emit('audio', sendBuf.buffer.slice(0)); sendN = 0; }
+      pos += ratio;
+    }
+    const keep = Math.floor(pos);
+    audio.carry = inp.slice(keep); audio.pos = pos - keep;
+    setMeter(peak);
+  }
+
+  socket.on('audio', ({ from, data }) => {
+    if (!audio.ctx) return;
+    const i16 = new Int16Array(data instanceof ArrayBuffer ? data : data.buffer ? data.buffer.slice(data.byteOffset, data.byteOffset + data.byteLength) : data);
+    if (!i16.length) return;
+    const buf = audio.ctx.createBuffer(1, i16.length, RATE);
+    const ch = buf.getChannelData(0); let peak = 0;
+    for (let i = 0; i < i16.length; i++) { ch[i] = i16[i] / 0x8000; peak = Math.max(peak, Math.abs(ch[i])); }
+    const src = audio.ctx.createBufferSource(); src.buffer = buf; src.connect(audio.gain);
+    const now = audio.ctx.currentTime;
+    let t = audio.play.get(from) || 0;
+    if (t < now + 0.02 || t > now + 1.0) t = now + 0.12; // 지터 버퍼 120ms
+    src.start(t); audio.play.set(from, t + buf.duration);
+    setMeter(peak);
+  });
+
+  socket.on('talk:start', ({ userId }) => { audio.play.delete(userId); beep('in'); if (navigator.vibrate) navigator.vibrate(30); });
+  socket.on('talk:end', ({ userId }) => { const t = audio.play.get(userId) || 0; setTimeout(() => beep('roger'), Math.max(0, (t - (audio.ctx?.currentTime || 0)) * 1000)); audio.play.delete(userId); setMeter(0); });
+
+  function beep(kind) {
+    const ctx = audio.ctx; if (!ctx) return;
+    const t = ctx.currentTime + 0.01;
+    const tones = kind === 'roger' ? [[1200, 0, .07], [900, .08, .09]] : kind === 'tx' ? [[1000, 0, .05]] : kind === 'busy' ? [[420, 0, .12], [420, .18, .12]] : [[700, 0, .05], [1100, .06, .05]];
+    for (const [f, d, len] of tones) {
+      const o = ctx.createOscillator(), g = ctx.createGain();
+      o.type = 'square'; o.frequency.value = f;
+      g.gain.setValueAtTime(0.0001, t + d); g.gain.exponentialRampToValueAtTime(0.08, t + d + 0.005); g.gain.exponentialRampToValueAtTime(0.0001, t + d + len);
+      o.connect(g); g.connect(audio.gain); o.start(t + d); o.stop(t + d + len + 0.02);
+    }
+  }
+
+  const meterBars = Array.from({ length: 8 }, () => el('i'));
+  meterBars.forEach((b, i) => (b.style.height = 4 + i * 1.4 + 'px'));
+  $('meter').replaceChildren(...meterBars);
+  let meterDecay;
+  function setMeter(p) {
+    const n = Math.min(8, Math.round(Math.sqrt(p) * 9));
+    meterBars.forEach((b, i) => b.classList.toggle('lit', i < n));
+    clearTimeout(meterDecay); meterDecay = setTimeout(() => meterBars.forEach((b) => b.classList.remove('lit')), 250);
+  }
+
+  $('vol').addEventListener('input', () => { if (audio.gain) audio.gain.gain.value = Number($('vol').value); });
+
+  // ---------- PTT ----------
+  let pressing = false, startPending = false;
+  async function startTalking() {
+    if (S.talking || startPending) return;
+    pressing = true; $('pttBtn').classList.add('down');
+    const hadMic = !!audio.mic;
+    if (!(await ensureMic())) { $('pttBtn').classList.remove('down'); pressing = false; return; }
+    if (!hadMic) { $('pttBtn').classList.remove('down'); pressing = false; toast('마이크가 켜졌어요. 이제 버튼을 누르고 말하세요.'); return; }
+    if (!pressing) { $('pttBtn').classList.remove('down'); return; }
+    startPending = true;
+    const r = await emitAck('talk:start');
+    startPending = false;
+    if (!r.ok) { $('pttBtn').classList.remove('down'); pressing = false; beep('busy'); toast(r.error); return; }
+    if (!pressing) { socket.emit('talk:stop'); return; }
+    S.talking = true; sendN = 0; audio.track.enabled = true; beep('tx');
+    if (navigator.vibrate) navigator.vibrate(20);
+    updateRadioState();
+  }
+  function stopTalking(silent) {
+    pressing = false; $('pttBtn').classList.remove('down');
+    if (!S.talking) return;
+    if (sendN > 0) { socket.emit('audio', sendBuf.slice(0, sendN).buffer); sendN = 0; }
+    S.talking = false; if (audio.track) audio.track.enabled = false;
+    if (!silent) socket.emit('talk:stop');
+    updateRadioState();
+  }
+  const ptt = $('pttBtn');
+  ptt.addEventListener('pointerdown', (e) => { if (e.button !== 0) return; e.preventDefault(); ptt.setPointerCapture?.(e.pointerId); startTalking(); });
+  ptt.addEventListener('pointerup', () => stopTalking());
+  ptt.addEventListener('pointercancel', () => stopTalking());
+  ptt.addEventListener('lostpointercapture', () => stopTalking());
+  ptt.addEventListener('contextmenu', (e) => e.preventDefault());
+  ptt.addEventListener('keydown', (e) => { if ((e.key === 'Enter') && !e.repeat) { e.preventDefault(); startTalking(); } });
+  ptt.addEventListener('keyup', (e) => { if (e.key === 'Enter') stopTalking(); });
+  const typing = () => ['INPUT', 'TEXTAREA'].includes(document.activeElement?.tagName) || document.querySelector('dialog[open]');
+  window.addEventListener('keydown', (e) => { if (e.code === 'Space' && !e.repeat && S.room && !typing()) { e.preventDefault(); startTalking(); } });
+  window.addEventListener('keyup', (e) => { if (e.code === 'Space' && S.room && !typing()) { e.preventDefault(); stopTalking(); } });
+  window.addEventListener('blur', () => stopTalking());
+  document.addEventListener('visibilitychange', () => { if (document.hidden) stopTalking(); else if (S.room) requestWakeLock(); });
+
+  let wakeLock = null;
+  async function requestWakeLock() { try { wakeLock = await navigator.wakeLock?.request('screen'); } catch {} }
+})();
+</script>
+</body>
+</html>

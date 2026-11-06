@@ -12,6 +12,7 @@ const PORT = process.env.PORT || 3000;
 const MAX_TALK_MS = 60_000; // 한 번에 최대 60초 송신
 const MAX_CHANNELS = 12;
 const MAX_ROOMS = 200;
+const GRACE_MS = 45_000; // 연결이 끊겨도 이 시간 동안은 방·채널 자리를 유지
 
 const app = express();
 app.use(express.static(path.join(__dirname, 'public')));
@@ -20,8 +21,10 @@ app.get('/healthz', (_req, res) => res.send('ok'));
 const server = http.createServer(app);
 const io = new Server(server, { maxHttpBufferSize: 64 * 1024 });
 
-/** @type {Map<string, {id:string,nick:string,roomId:string|null,channelId:string|null,color:number}>} */
+/** @type {Map<string, {id:string,key:string,socketId:string|null,online:boolean,graceTimer:any,nick:string,roomId:string|null,channelId:string|null,color:number}>} */
 const users = new Map();
+/** 재접속용 비밀 키 → 공개 user id */
+const keys = new Map();
 /** @type {Map<string, {id:string,name:string,ownerId:string,passHash:string|null,channels:Map<string,any>,createdAt:number}>} */
 const rooms = new Map();
 
@@ -60,6 +63,7 @@ function lobbyState() {
       nick: u.nick,
       color: u.color,
       roomId: u.roomId,
+      online: u.online,
       roomName: u.roomId ? rooms.get(u.roomId)?.name ?? null : null,
     })),
     rooms: [...rooms.values()]
@@ -81,7 +85,7 @@ function roomStateFor(room, viewerId) {
     name: room.name,
     ownerId: room.ownerId,
     locked: !!room.passHash,
-    members: roomMembers(room).map((u) => ({ id: u.id, nick: u.nick, color: u.color, channelId: u.channelId })),
+    members: roomMembers(room).map((u) => ({ id: u.id, nick: u.nick, color: u.color, channelId: u.channelId, online: u.online })),
     channels: [...room.channels.values()].map((c) => ({
       id: c.id,
       name: c.name,
@@ -105,7 +109,7 @@ function broadcastLobby() {
 
 function broadcastRoom(room) {
   for (const u of roomMembers(room)) {
-    io.to(u.id).emit('room', roomStateFor(room, u.id));
+    io.to('u:' + u.id).emit('room', roomStateFor(room, u.id));
   }
 }
 
@@ -122,8 +126,7 @@ function leaveChannel(u) {
   if (!u.roomId || !u.channelId) return;
   const room = rooms.get(u.roomId);
   const ch = room?.channels.get(u.channelId);
-  const sock = io.sockets.sockets.get(u.id);
-  sock?.leave(`ch:${u.channelId}`);
+  if (u.socketId) io.sockets.sockets.get(u.socketId)?.leave(`ch:${u.channelId}`);
   if (ch && ch.talker === u.id) releaseTalk(room, ch, 'left');
   u.channelId = null;
 }
@@ -131,7 +134,7 @@ function leaveChannel(u) {
 function joinChannel(u, room, ch) {
   leaveChannel(u);
   u.channelId = ch.id;
-  io.sockets.sockets.get(u.id)?.join(`ch:${ch.id}`);
+  if (u.socketId) io.sockets.sockets.get(u.socketId)?.join(`ch:${ch.id}`);
 }
 
 function leaveRoom(u) {
@@ -163,7 +166,7 @@ setInterval(() => {
   for (const room of rooms.values()) {
     for (const ch of room.channels.values()) {
       if (ch.talker && now - ch.talkStarted > MAX_TALK_MS) {
-        io.to(ch.talker).emit('toast', '송신 시간(60초)이 지나 자동으로 끊었어요.');
+        io.to('u:' + ch.talker).emit('toast', '송신 시간(60초)이 지나 자동으로 끊었어요.');
         releaseTalk(room, ch, 'timeout');
       }
     }
@@ -173,26 +176,36 @@ setInterval(() => {
 io.on('connection', (socket) => {
   const ack = (cb, payload) => typeof cb === 'function' && cb(payload);
 
-  socket.on('hello', ({ nick } = {}, cb) => {
+  socket.on('hello', ({ nick, key } = {}, cb) => {
     nick = clean(nick, 16);
     if (!nick) return ack(cb, { ok: false, error: '닉네임을 입력해 주세요.' });
-    const existing = users.get(socket.id);
-    if (existing) {
-      existing.nick = nick;
+    key = typeof key === 'string' && /^[A-Za-z0-9_-]{16,64}$/.test(key) ? key : null;
+    let u = key && users.get(keys.get(key));
+    // 같은 키로 이미 다른 창이 접속 중이면 새 사용자로 취급(탭 복제 등)
+    if (u && u.online && u.socketId !== socket.id) u = null;
+    if (u) {
+      clearTimeout(u.graceTimer);
+      u.graceTimer = null;
     } else {
-      users.set(socket.id, {
-        id: socket.id,
-        nick,
-        roomId: null,
-        channelId: null,
-        color: parseInt(hash(socket.id).slice(0, 4), 16) % 360,
-      });
+      key = uid(24);
+      const id = uid(8);
+      u = { id, key, socketId: null, online: false, graceTimer: null, nick, roomId: null, channelId: null, color: parseInt(hash(id).slice(0, 4), 16) % 360 };
+      users.set(id, u);
+      keys.set(key, id);
     }
+    u.nick = nick;
+    u.socketId = socket.id;
+    u.online = true;
+    socket.data.uid = u.id;
+    socket.join('u:' + u.id);
+    const room = u.roomId && rooms.get(u.roomId);
+    if (room && u.channelId) socket.join(`ch:${u.channelId}`);
+    if (room) broadcastRoom(room);
     broadcastLobby();
-    ack(cb, { ok: true, me: users.get(socket.id), lobby: lobbyState() });
+    ack(cb, { ok: true, key: u.key, me: { id: u.id, nick: u.nick, color: u.color }, lobby: lobbyState(), room: room ? roomStateFor(room, u.id) : null });
   });
 
-  const me = () => users.get(socket.id);
+  const me = () => (socket.data.uid ? users.get(socket.data.uid) : undefined);
 
   socket.on('room:create', ({ name, password } = {}, cb) => {
     const u = me();
@@ -285,7 +298,7 @@ io.on('connection', (socket) => {
       for (const m of roomMembers(room)) {
         if (m.channelId === ch.id && !canUseChannel(room, ch, m.id)) {
           joinChannel(m, room, main);
-          io.to(m.id).emit('toast', `'${ch.name}' 채널 사용 권한이 바뀌어 공용 채널로 옮겼어요.`);
+          io.to('u:' + m.id).emit('toast', `'${ch.name}' 채널 사용 권한이 바뀌어 공용 채널로 옮겼어요.`);
         }
       }
     }
@@ -355,9 +368,20 @@ io.on('connection', (socket) => {
 
   socket.on('disconnect', () => {
     const u = me();
-    if (u) leaveRoom(u);
-    users.delete(socket.id);
+    if (!u || u.socketId !== socket.id) return;
+    u.online = false;
+    u.socketId = null;
+    const room = u.roomId && rooms.get(u.roomId);
+    const ch = room?.channels.get(u.channelId);
+    if (ch && ch.talker === u.id) releaseTalk(room, ch, 'left');
+    if (room) broadcastRoom(room);
     broadcastLobby();
+    u.graceTimer = setTimeout(() => {
+      leaveRoom(u);
+      users.delete(u.id);
+      keys.delete(u.key);
+      broadcastLobby();
+    }, GRACE_MS);
   });
 });
 

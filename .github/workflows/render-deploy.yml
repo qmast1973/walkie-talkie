@@ -1,0 +1,24 @@
+# main에 새 코드가 올라오면 Render 배포를 바로 요청(자동 배포가 늦거나 빠질 때 대비)
+# 저장소 Secrets에 RENDER_DEPLOY_HOOK(Render → Settings → Deploy Hook 주소)이 있을 때만 동작
+name: Render deploy
+
+on:
+  push:
+    branches: [main]
+    paths-ignore:
+      - 'android-app/**'
+  workflow_dispatch:
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Trigger Render deploy hook
+        env:
+          HOOK: ${{ secrets.RENDER_DEPLOY_HOOK }}
+        run: |
+          if [ -z "$HOOK" ]; then
+            echo "RENDER_DEPLOY_HOOK 비밀이 없어 건너뜀"
+            exit 0
+          fi
+          curl -fsS -X POST "$HOOK" > /dev/null && echo "Render 배포 요청 완료"

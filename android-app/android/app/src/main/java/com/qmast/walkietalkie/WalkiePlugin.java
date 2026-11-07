@@ -90,10 +90,10 @@ public class WalkiePlugin extends Plugin {
     }
 
     static void openBatterySettings(Activity act) {
-        if (Build.VERSION.SDK_INT < 23 || isBatteryExempt(act)) return;
+        if (Build.VERSION.SDK_INT < 23) return;
+        // 스토어 정책상 예외를 직접 요청하지 않고, 사용자가 고를 수 있는 설정 화면을 엶
         try {
-            Intent i = new Intent(Settings.ACTION_REQUEST_IGNORE_BATTERY_OPTIMIZATIONS, Uri.parse("package:" + act.getPackageName()));
-            act.startActivity(i);
+            act.startActivity(new Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS, Uri.parse("package:" + act.getPackageName())));
         } catch (Exception e) {
             try {
                 act.startActivity(new Intent(Settings.ACTION_IGNORE_BATTERY_OPTIMIZATION_SETTINGS));

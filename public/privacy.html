@@ -1,0 +1,49 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>개인정보처리방침 · 모두의 무전기</title>
+<style>
+:root{--bg:#f6f7f3;--ink:#1d221f;--muted:#5e665f;--line:#cfd4cb}
+@media (prefers-color-scheme:dark){:root{--bg:#141714;--ink:#e6e9e3;--muted:#9aa39a;--line:#2f352f;color-scheme:dark}}
+body{margin:0;background:var(--bg);color:var(--ink);font:16px/1.7 "IBM Plex Sans KR",system-ui,-apple-system,"Apple SD Gothic Neo","Malgun Gothic",sans-serif}
+main{max-width:720px;margin:0 auto;padding:32px max(16px,env(safe-area-inset-left,0px)) 48px max(16px,env(safe-area-inset-right,0px))}
+h1{font-size:24px;margin:0 0 4px}h2{font-size:18px;margin:28px 0 6px}
+p,li{color:var(--ink)}.muted{color:var(--muted);font-size:14px}
+table{border-collapse:collapse;width:100%;font-size:15px}td,th{border:1px solid var(--line);padding:8px;text-align:left;vertical-align:top}
+</style>
+</head>
+<body>
+<main>
+<h1>개인정보처리방침</h1>
+<p class="muted">모두의 무전기 · 시행일 2026년 11월 7일</p>
+
+<p>모두의 무전기(이하 ‘앱’)는 같은 방에 들어온 사람끼리 음성으로 무전하는 서비스입니다. 앱은 무전에 꼭 필요한 정보만 다루며, 회원가입이나 전화번호·이메일을 받지 않습니다.</p>
+
+<h2>1. 다루는 정보</h2>
+<table>
+<tr><th>정보</th><th>용도</th><th>보관</th></tr>
+<tr><td>닉네임(직접 입력)</td><td>접속자 명단·방 인원 표시</td><td>접속 중, 그리고 마지막 접속 후 최대 24시간(원래 방으로 복귀용)</td></tr>
+<tr><td>기기 식별용 임의 키</td><td>새로고침·재접속 때 같은 사람으로 이어 주기</td><td>기기 안(앱 저장소)과 서버에 최대 24시간</td></tr>
+<tr><td>방·채널 이름, 방 비밀번호(암호화된 값), 채널 인원 지정</td><td>방과 채널 운영</td><td>방장이 삭제하거나, 빈 방으로 24시간이 지나면 삭제</td></tr>
+<tr><td>음성(송신 버튼을 누르는 동안의 마이크 소리)</td><td>같은 채널 사람에게 실시간 전달</td><td><strong>저장하지 않음</strong>. 서버는 전달만 하고 녹음하지 않습니다.</td></tr>
+</table>
+
+<h2>2. 마이크 사용</h2>
+<p>앱은 송신 버튼(화면 버튼, 볼륨(-) 버튼, 이어폰 버튼)을 누르고 있는 동안에만 마이크 소리를 보냅니다. 화면이 꺼진 상태에서도 버튼으로 송신할 수 있도록 ‘무전기 대기 중’ 알림과 함께 백그라운드에서 동작합니다. 버튼을 누르지 않을 때는 소리를 보내지 않습니다.</p>
+
+<h2>3. 제3자 제공·광고</h2>
+<p>앱은 정보를 판매하거나 광고·분석 목적으로 제3자에게 제공하지 않습니다. 서비스 운영을 위해 다음 업체의 서버를 이용합니다: Render(앱 서버 운영), Neon(방·채널 정보 저장). 통신은 모두 암호화(HTTPS)됩니다.</p>
+
+<h2>4. 삭제</h2>
+<p>앱을 지우면 기기에 저장된 닉네임과 키가 지워지고, 서버에 남은 정보는 24시간 안에 자동 삭제됩니다. 방장은 언제든 방을 삭제할 수 있습니다. 바로 삭제를 원하시면 아래 연락처로 요청해 주세요.</p>
+
+<h2>5. 아동</h2>
+<p>앱은 만 14세 미만 아동을 대상으로 하지 않습니다.</p>
+
+<h2>6. 문의</h2>
+<p>개발자: qmast1973 · 문의: GitHub 저장소 이슈 <span class="muted">(github.com/qmast1973/walkie-talkie/issues)</span></p>
+</main>
+</body>
+</html>

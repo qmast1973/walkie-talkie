@@ -17,6 +17,11 @@
 <style>
 /* 레이아웃: 왼쪽은 명단·채널(정보), 오른쪽은 무전기 본체(조작). 폰에서는 본체가 맨 아래 고정 */
 :root{
+  /* 화면 가장자리(상태표시줄·내비게이션 바) 여백: 브라우저 값과 안드로이드 앱(Capacitor)이 넣어 주는 값 중 큰 쪽 */
+  --sa-top:max(env(safe-area-inset-top,0px),var(--safe-area-inset-top,0px));
+  --sa-bottom:max(env(safe-area-inset-bottom,0px),var(--safe-area-inset-bottom,0px));
+  --sa-left:max(env(safe-area-inset-left,0px),var(--safe-area-inset-left,0px));
+  --sa-right:max(env(safe-area-inset-right,0px),var(--safe-area-inset-right,0px));
   --bg:#e7e9e4;          /* 국방색 기운이 살짝 도는 회색 */
   --panel:#f6f7f3;
   --ink:#1d221f;
@@ -43,15 +48,17 @@
 
 *{box-sizing:border-box}
 html,body{height:100%}
-body{margin:0;background:var(--bg);color:var(--ink);font:15px/1.55 var(--font-body);
+body{margin:0;padding-top:var(--sa-top);background:var(--bg);color:var(--ink);font:15px/1.55 var(--font-body);
   -webkit-tap-highlight-color:transparent}
 [hidden]{display:none!important}
+/* 상태표시줄 아래로 내용이 비치지 않게 가림 */
+body::before{content:"";position:fixed;inset:0 0 auto;height:var(--sa-top);background:var(--bg);z-index:30}
 button,input{font:inherit;color:inherit}
 button{cursor:pointer}
 :focus-visible{outline:2px solid var(--accent);outline-offset:2px}
 h1,h2,h3{margin:0;text-wrap:balance;line-height:1.25}
 .wrap{max-width:1080px;margin:0 auto;padding-block:20px 32px;
-  padding-left:max(16px,env(safe-area-inset-left,0px));padding-right:max(16px,env(safe-area-inset-right,0px))}
+  padding-left:max(16px,var(--sa-left));padding-right:max(16px,var(--sa-right))}
 .label{font-size:12px;letter-spacing:.06em;color:var(--muted);font-weight:500}
 .mono{font-family:var(--font-mono);font-variant-numeric:tabular-nums}
 .btn{border:1px solid var(--line);background:var(--panel);border-radius:8px;padding:8px 14px;font-weight:500}
@@ -120,7 +127,7 @@ h1,h2,h3{margin:0;text-wrap:balance;line-height:1.25}
 .chan .acts{display:flex;gap:6px;flex:none}
 
 /* 무전기 본체 */
-.device{position:sticky;top:max(12px,env(safe-area-inset-top,0px));background:var(--device);color:var(--device-ink);
+.device{position:sticky;top:max(12px,var(--sa-top));background:var(--device);color:var(--device-ink);
   border-radius:26px 26px 20px 20px;padding:18px 18px 22px;box-shadow:0 2px 0 rgba(0,0,0,.25),0 18px 40px -18px rgba(0,0,0,.45)}
 .grille{height:46px;margin:2px 6px 14px;border-radius:10px;
   background:repeating-linear-gradient(90deg,rgba(255,255,255,.09) 0 3px,transparent 3px 8px)}
@@ -169,7 +176,7 @@ dialog::backdrop{background:rgba(10,12,10,.45)}
 a.btn{text-decoration:none;display:inline-block;text-align:center}
 .install .btn.primary{background:var(--ptt);border-color:var(--ptt);color:#1b1206;flex:none}
 .install-x{background:none;border:0;color:inherit;font-size:22px;line-height:1;padding:4px 6px;opacity:.7;flex:none}
-.toast{position:fixed;left:50%;bottom:calc(20px + env(safe-area-inset-bottom,0px));transform:translateX(-50%);
+.toast{position:fixed;left:50%;bottom:calc(20px + var(--sa-bottom));transform:translateX(-50%);
   background:var(--ink);color:var(--bg);padding:10px 16px;border-radius:10px;font-size:14px;max-width:calc(100vw - 32px);z-index:50}
 
 .m-top,.chips{display:none}
@@ -187,8 +194,8 @@ a.btn{text-decoration:none;display:inline-block;text-align:center}
 /* ===== 휴대폰: 앱 화면처럼 ===== */
 @media (max-width:860px){
   body.in-room .top{display:none}
-  body.in-room .wrap{padding-top:8px;padding-bottom:calc(250px + env(safe-area-inset-bottom,0px))}
-  .m-top{display:flex;align-items:center;gap:10px;position:sticky;top:0;z-index:15;background:var(--bg);
+  body.in-room .wrap{padding-top:8px;padding-bottom:calc(250px + var(--sa-bottom))}
+  .m-top{display:flex;align-items:center;gap:10px;position:sticky;top:var(--sa-top);z-index:15;background:var(--bg);
     margin:0 0 10px;padding:6px 0}
   .m-back{border:1px solid var(--line);background:var(--panel);border-radius:999px;padding:8px 14px;font-weight:600;flex:none}
   .m-title{min-width:0;flex:1;display:flex;flex-direction:column;line-height:1.25}
@@ -213,14 +220,14 @@ a.btn{text-decoration:none;display:inline-block;text-align:center}
   .chip.add{border-style:dashed}
   .dock{position:fixed;left:0;right:0;bottom:0;z-index:20;background:var(--device);color:var(--device-ink);
     border-radius:22px 22px 0 0;box-shadow:0 -10px 30px -12px rgba(0,0,0,.5);
-    padding:14px max(16px,env(safe-area-inset-right,0px)) calc(12px + env(safe-area-inset-bottom,0px)) max(16px,env(safe-area-inset-left,0px))}
+    padding:14px max(16px,var(--sa-right)) calc(12px + var(--sa-bottom)) max(16px,var(--sa-left))}
   .ptt-wrap{padding:0}
   .ptt{width:100%;max-width:520px;aspect-ratio:auto;height:150px;border-radius:24px;font-size:26px}
   .ptt small{font-size:14px;margin-top:2px}
   .ptt.tx{box-shadow:0 1px 0 #6d1418,0 0 0 6px color-mix(in srgb,var(--tx) 35%,transparent)}
   .dev-row{max-width:520px;margin:12px auto 0}
   .hint{display:none}
-  body.in-room .toast{bottom:calc(250px + env(safe-area-inset-bottom,0px))}
+  body.in-room .toast{bottom:calc(250px + var(--sa-bottom))}
   .grid{display:flex;flex-direction:column}
   .grid .box:last-child{order:-1}               /* 대기실: 방 목록을 먼저 */
 }
@@ -259,6 +266,13 @@ a.btn{text-decoration:none;display:inline-block;text-align:center}
       <button class="btn primary small" id="installBtn" type="button">설치</button>
       <a class="btn primary small" id="apkLink" href="https://github.com/qmast1973/walkie-talkie/releases/latest/download/walkie-talkie.apk" hidden>앱 받기</a>
       <button class="install-x" id="installClose" type="button" aria-label="설치 안내 닫기">×</button>
+    </div>
+    <div class="install" id="batteryBox" hidden>
+      <div class="install-text">
+        <strong>대기 중 끊김 막기</strong>
+        <span>앱 정보 → 배터리 → ‘제한 없음’으로 바꾸면 화면이 꺼져도 무전이 끊기지 않아요.</span>
+      </div>
+      <button class="btn primary small" id="batteryBtn" type="button">설정 열기</button>
     </div>
     <div class="mebar lobby-me">
       <span class="avatar me-avatar"></span>
@@ -908,6 +922,13 @@ a.btn{text-decoration:none;display:inline-block;text-align:center}
     lastNative = sig;
     nativeCall('setStatus', { inRoom, text });
   }
+  // 앱에서 배터리 제한이 걸려 있으면 대기실에 설정 안내 표시
+  function checkBattery() {
+    try { $('batteryBox').hidden = !(window.WalkieNative && window.WalkieNative.isBatteryExempt() === false); } catch { $('batteryBox').hidden = true; }
+  }
+  $('batteryBtn').addEventListener('click', () => { try { window.WalkieNative.openBatterySettings(); } catch {} });
+  checkBattery();
+  document.addEventListener('visibilitychange', () => { if (!document.hidden) checkBattery(); });
   window.addEventListener('walkieptt', (e) => { if (!S.room) return; if (e.down) startTalking(); else stopTalking(); });
   window.addEventListener('walkiepttToggle', () => { if (!S.room) return; if (S.talking || pressing) stopTalking(); else startTalking(); });
 

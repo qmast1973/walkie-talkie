@@ -1,8 +1,6 @@
 package com.qmast.walkietalkie;
 
 import android.Manifest;
-import android.content.Context;
-import android.content.SharedPreferences;
 import android.content.pm.PackageManager;
 import android.os.Build;
 import android.os.Bundle;
@@ -49,8 +47,6 @@ public class MainActivity extends BridgeActivity {
         }
         if (!need.isEmpty()) {
             ActivityCompat.requestPermissions(this, need.toArray(new String[0]), REQ_PERMS);
-        } else {
-            askBatteryExemptionOnce();
         }
     }
 
@@ -60,17 +56,7 @@ public class MainActivity extends BridgeActivity {
         if (requestCode == REQ_PERMS) {
             // 마이크 권한을 받았으면 서비스를 '마이크 사용' 형태로 다시 시작(화면 꺼진 상태 송신 대비)
             WalkieService.start(this, null);
-            askBatteryExemptionOnce();
         }
-    }
-
-    /** 배터리 최적화 때문에 대기 중 연결이 끊기지 않도록 한 번만 예외 요청 */
-    private void askBatteryExemptionOnce() {
-        if (Build.VERSION.SDK_INT < 23) return;
-        SharedPreferences sp = getSharedPreferences("walkie", Context.MODE_PRIVATE);
-        if (sp.getBoolean("askedBattery", false)) return;
-        sp.edit().putBoolean("askedBattery", true).apply();
-        WalkiePlugin.openBatterySettings(this);
     }
 
     @Override

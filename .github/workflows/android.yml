@@ -25,12 +25,12 @@ jobs:
 
       - uses: actions/setup-node@v4
         with:
-          node-version: 20
+          node-version: 22
 
       - uses: actions/setup-java@v4
         with:
           distribution: temurin
-          java-version: 17
+          java-version: 21
 
       - name: Install Capacitor
         run: npm ci
@@ -48,19 +48,23 @@ jobs:
             echo "WALKIE_KEYSTORE=$RUNNER_TEMP/walkie.keystore" >> "$GITHUB_ENV"
           fi
 
-      - name: Build APK
+      # APK(직접 설치용)와 AAB(플레이스토어 업로드용)를 함께 빌드
+      - name: Build APK and AAB
         working-directory: android-app/android
         env:
           WALKIE_KEYSTORE_PASSWORD: ${{ secrets.WALKIE_KEYSTORE_PASSWORD }}
         run: |
           chmod +x gradlew
-          ./gradlew assembleRelease --no-daemon -PversionCode=${{ github.run_number }}
+          ./gradlew assembleRelease bundleRelease --no-daemon -PversionCode=$((100 + ${{ github.run_number }}))
           cp app/build/outputs/apk/release/app-release.apk "$GITHUB_WORKSPACE/walkie-talkie.apk"
+          cp app/build/outputs/bundle/release/app-release.aab "$GITHUB_WORKSPACE/walkie-talkie.aab"
 
       - uses: actions/upload-artifact@v4
         with:
           name: walkie-talkie-apk
-          path: walkie-talkie.apk
+          path: |
+            walkie-talkie.apk
+            walkie-talkie.aab
 
       - name: Publish release
         uses: softprops/action-gh-release@v2
@@ -68,8 +72,11 @@ jobs:
           tag_name: android-v${{ github.run_number }}
           name: 안드로이드 앱 v1.0.${{ github.run_number }}
           make_latest: true
-          files: walkie-talkie.apk
+          files: |
+            walkie-talkie.apk
+            walkie-talkie.aab
           body: |
             모두의 무전기 안드로이드 앱입니다.
             휴대폰에서 아래 walkie-talkie.apk 를 눌러 받은 뒤 설치하세요.
             (처음 한 번 '출처를 알 수 없는 앱 설치 허용'이 필요할 수 있어요)
+            walkie-talkie.aab 는 플레이스토어(Play Console) 업로드용 파일이에요.

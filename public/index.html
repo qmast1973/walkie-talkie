@@ -170,6 +170,15 @@ dialog::backdrop{background:rgba(10,12,10,.45)}
   background:var(--ink);color:var(--bg);padding:10px 16px;border-radius:10px;font-size:14px;max-width:calc(100vw - 32px);z-index:50}
 
 .m-top,.chips{display:none}
+/* 내 이름 표시 */
+.mebar{display:flex;align-items:center;gap:10px;min-width:0}
+.mebar .me-text{flex:1;min-width:0;display:flex;align-items:baseline;gap:8px}
+.mebar .me-label{font-size:12px;letter-spacing:.04em;opacity:.7;flex:none}
+.mebar .me-nick{font-size:17px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.lobby-me{background:var(--panel);border:1px solid var(--line);border-radius:14px;padding:10px 14px;margin-bottom:14px}
+.dev-me{margin-top:12px;padding:8px 10px;border-radius:12px;background:rgba(255,255,255,.07);color:var(--device-ink)}
+.dev-me .avatar{width:26px;height:26px;font-size:12px}
+.dev-me .me-edit{flex:none;background:transparent;color:var(--device-ink);border:1px solid rgba(255,255,255,.25);border-radius:999px;padding:6px 12px;font-size:13px;font-weight:600}
 .input{font-size:16px} /* iOS 확대 방지 */
 
 /* ===== 휴대폰: 앱 화면처럼 ===== */
@@ -246,6 +255,11 @@ dialog::backdrop{background:rgba(10,12,10,.45)}
       <button class="btn primary small" id="installBtn" type="button">설치</button>
       <button class="install-x" id="installClose" type="button" aria-label="설치 안내 닫기">×</button>
     </div>
+    <div class="mebar lobby-me">
+      <span class="avatar me-avatar"></span>
+      <span class="me-text"><span class="me-label">내 이름</span><strong class="me-nick"></strong></span>
+      <button class="btn small me-edit" type="button">이름 변경</button>
+    </div>
     <div class="grid">
       <div class="box">
         <div class="box-head"><h2>접속자 명단</h2><span class="label mono" id="userCount"></span></div>
@@ -305,6 +319,11 @@ dialog::backdrop{background:rgba(10,12,10,.45)}
             <span class="meter" id="meter" aria-hidden="true"></span>
           </div>
         </div>
+        <div class="mebar dev-me">
+          <span class="avatar me-avatar"></span>
+          <span class="me-text"><span class="me-label">내 이름</span><strong class="me-nick"></strong></span>
+          <button class="me-edit" type="button">이름 변경</button>
+        </div>
         <div class="chips" id="chipList" role="tablist" aria-label="채널 선택"></div>
         <div class="dock">
         <div class="ptt-wrap">
@@ -319,6 +338,17 @@ dialog::backdrop{background:rgba(10,12,10,.45)}
     </div>
   </section>
 </div>
+
+<!-- 이름 변경 -->
+<dialog id="nickDlg">
+  <form class="dlg" method="dialog" id="nickForm">
+    <h3>이름 변경</h3>
+    <label class="label" for="nickEdit">새 닉네임 (16자까지)</label>
+    <input class="input" id="nickEdit" maxlength="16" autocomplete="nickname" required>
+    <p class="err" id="nickErr"></p>
+    <div class="dlg-acts"><button class="btn" value="cancel" formnovalidate>취소</button><button class="btn primary" value="ok">저장</button></div>
+  </form>
+</dialog>
 
 <!-- 비밀번호 -->
 <dialog id="passDlg">
@@ -425,9 +455,33 @@ dialog::backdrop{background:rgba(10,12,10,.45)}
     ss.set('wt.key', r.key);
     $('verText').textContent = r.version ? `서버 버전 ${r.version}` : '';
     S.me = r.me; S.lobby = r.lobby;
+    renderMe();
     if (r.room) enterRoom(r.room); else { S.room = null; renderLobby(); show('viewLobby'); }
     return r;
   }
+
+  // ---------- 내 이름 ----------
+  function renderMe() {
+    if (!S.me) return;
+    for (const n of document.querySelectorAll('.me-nick')) n.textContent = S.me.nick;
+    for (const a of document.querySelectorAll('.me-avatar')) { a.textContent = [...S.me.nick][0] || '?'; a.style.setProperty('--h', S.me.color); }
+  }
+  for (const b of document.querySelectorAll('.me-edit')) b.addEventListener('click', () => {
+    $('nickEdit').value = S.me?.nick || ''; $('nickErr').textContent = '';
+    $('nickDlg').showModal(); $('nickEdit').select();
+  });
+  $('nickForm').addEventListener('submit', async (e) => {
+    if (e.submitter?.value !== 'ok') return;
+    e.preventDefault();
+    const nick = $('nickEdit').value.trim();
+    if (nick === S.me?.nick) { $('nickDlg').close(); return; }
+    stopTalking();
+    const r = await hello(nick);
+    if (!r.ok) { $('nickErr').textContent = r.error; $('nickEdit').select(); return; }
+    store.set('wt.nick', nick);
+    $('nickDlg').close();
+    toast(`이름을 ‘${nick}’(으)로 바꿨어요.`);
+  });
   socket.on('disconnect', () => {
     $('connDot').classList.remove('on'); $('mConnDot').classList.remove('on'); $('connText').textContent = '연결 끊김 · 다시 연결 중…';
     S.wasInRoom = !!S.room; stopTalking(true);

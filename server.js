@@ -30,7 +30,8 @@ const VERSION = (() => {
 const app = express();
 app.use(express.static(path.join(__dirname, 'public')));
 app.get('/healthz', (_req, res) => res.send('ok'));
-app.get('/version', (_req, res) => res.json({ version: VERSION }));
+// 저장 방식(db/memory)과 방 개수도 함께 알려 줌 — 배포 후 DB 연결 여부 확인용
+app.get('/version', (_req, res) => res.json({ version: VERSION, storage: pool ? 'db' : 'memory', rooms: rooms.size }));
 
 const server = http.createServer(app);
 // 끊긴 연결을 빨리 알아채도록 핑 간격을 짧게(기본 25초+20초 → 10초+10초)

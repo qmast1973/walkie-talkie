@@ -165,6 +165,7 @@ dialog::backdrop{background:rgba(10,12,10,.45)}
 .install img{border-radius:10px;flex:none}
 .install-text{flex:1;min-width:0;display:flex;flex-direction:column;line-height:1.35}
 .install-text span{font-size:13px;opacity:.8}
+a.btn{text-decoration:none;display:inline-block;text-align:center}
 .install .btn.primary{background:var(--ptt);border-color:var(--ptt);color:#1b1206;flex:none}
 .install-x{background:none;border:0;color:inherit;font-size:22px;line-height:1;padding:4px 6px;opacity:.7;flex:none}
 .toast{position:fixed;left:50%;bottom:calc(20px + env(safe-area-inset-bottom,0px));transform:translateX(-50%);
@@ -251,10 +252,11 @@ dialog::backdrop{background:rgba(10,12,10,.45)}
     <div class="install" id="installBox" hidden>
       <img src="/icons/icon-192.png" alt="" width="44" height="44">
       <div class="install-text">
-        <strong>폰에 앱으로 설치하기</strong>
+        <strong id="installTitle">폰에 앱으로 설치하기</strong>
         <span id="installMsg">홈 화면 아이콘으로 바로 열고, 주소창 없이 전체 화면으로 써요.</span>
       </div>
       <button class="btn primary small" id="installBtn" type="button">설치</button>
+      <a class="btn primary small" id="apkLink" href="https://github.com/qmast1973/walkie-talkie/releases/latest/download/walkie-talkie.apk" hidden>앱 받기</a>
       <button class="install-x" id="installClose" type="button" aria-label="설치 안내 닫기">×</button>
     </div>
     <div class="mebar lobby-me">
@@ -400,6 +402,9 @@ dialog::backdrop{background:rgba(10,12,10,.45)}
   'use strict';
   const $ = (id) => document.getElementById(id);
   const socket = io({ transports: ['websocket', 'polling'] });
+  const NATIVE = !!(window.Capacitor && (window.Capacitor.isNativePlatform?.() || window.Capacitor.getPlatform?.() === 'android'));
+  const nativeCall = (method, opts = {}) => { try { return Promise.resolve(window.Capacitor.nativePromise('Walkie', method, opts)).catch(() => {}); } catch { return Promise.resolve(); } };
+  let lastNative = '';
 
   const S = { me: null, lobby: { users: [], rooms: [] }, room: null, talking: false, rxFrom: null };
   const store = {
@@ -525,6 +530,7 @@ dialog::backdrop{background:rgba(10,12,10,.45)}
   socket.on('lobby', (l) => { S.lobby = l; renderLobby(); });
 
   function renderLobby() {
+    if (!S.room) syncNative();
     // 대기실 명단에는 지금 접속 중인 사람만(방에 있다가 잠깐 끊긴 사람은 방 이름과 함께 표시)
     const users = S.lobby.users.filter((u) => u.online !== false || u.roomId);
     $('userCount').textContent = `${users.filter((u) => u.online !== false).length}명 접속`;
@@ -583,7 +589,9 @@ dialog::backdrop{background:rgba(10,12,10,.45)}
   // ---------- 방 ----------
   socket.on('room', (room) => { if (S.room && room.id === S.room.id) { S.room = room; renderRoom(); } });
 
-  function enterRoom(room) { S.room = room; renderRoom(); show('viewRoom'); requestWakeLock(); }
+  function enterRoom(room) { S.room = room; renderRoom(); show('viewRoom'); requestWakeLock(); ensureAudio().catch(() => {}); }
+  // 자동으로 방에 돌아온 경우에도 첫 터치 때 소리를 켬(브라우저 정책)
+  document.addEventListener('pointerdown', () => { if (S.room) ensureAudio().catch(() => {}); }, { capture: true });
 
   $('mLeaveBtn').addEventListener('click', () => $('leaveRoomBtn').click());
   if (matchMedia('(pointer: coarse)').matches) $('pttHint').textContent = '버튼을 누르고 있는 동안 송신돼요';
@@ -662,6 +670,7 @@ dialog::backdrop{background:rgba(10,12,10,.45)}
     $('lcdState').textContent = S.talking ? '송신 중…' : other ? `◀ ${nickOf(other)}` : '대기 중';
     $('pttSub').textContent = !audio.mic ? '마이크 켜기' : S.talking ? '말하는 중' : other ? '수신 중' : '누르고 말하기';
     ptt.disabled = !!other && !S.talking;
+    syncNative();
   }
 
   async function switchChannel(c) {
@@ -774,6 +783,7 @@ dialog::backdrop{background:rgba(10,12,10,.45)}
 
   socket.on('audio', ({ from, data }) => {
     if (!audio.ctx) return;
+    if (audio.ctx.state === 'suspended') audio.ctx.resume().catch(() => {});
     const i16 = new Int16Array(data instanceof ArrayBuffer ? data : data.buffer ? data.buffer.slice(data.byteOffset, data.byteOffset + data.byteLength) : data);
     if (!i16.length) return;
     const buf = audio.ctx.createBuffer(1, i16.length, RATE);
@@ -854,6 +864,25 @@ dialog::backdrop{background:rgba(10,12,10,.45)}
   window.addEventListener('blur', () => stopTalking());
   document.addEventListener('visibilitychange', () => { if (document.hidden) stopTalking(); else if (S.room) requestWakeLock(); });
 
+  // ---------- 안드로이드 앱 연동 ----------
+  // 앱(Capacitor) 안에서 열렸을 때만 동작: 알림 문구 갱신, 볼륨(-) 버튼·이어폰 버튼 송신
+  function syncNative() {
+    if (!NATIVE) return;
+    let inRoom = false, text = '대기실';
+    if (S.room) {
+      inRoom = true;
+      const cur = myChannel();
+      const other = cur?.talker && cur.talker !== S.me?.id ? cur.talker : null;
+      text = `${S.room.name} · ${cur ? cur.name : ''}` + (S.talking ? ' · 송신 중' : other ? ` · ◀ ${nickOf(other)}` : '');
+    }
+    const sig = inRoom + '|' + text;
+    if (sig === lastNative) return;
+    lastNative = sig;
+    nativeCall('setStatus', { inRoom, text });
+  }
+  window.addEventListener('walkieptt', (e) => { if (!S.room) return; if (e.down) startTalking(); else stopTalking(); });
+  window.addEventListener('walkiepttToggle', () => { if (!S.room) return; if (S.talking || pressing) stopTalking(); else startTalking(); });
+
   // ---------- 앱 설치(PWA) ----------
   if ('serviceWorker' in navigator) window.addEventListener('load', () => navigator.serviceWorker.register('/sw.js').catch(() => {}));
   const standalone = matchMedia('(display-mode: standalone)').matches || navigator.standalone === true;
@@ -861,15 +890,23 @@ dialog::backdrop{background:rgba(10,12,10,.45)}
   const isMobile = matchMedia('(pointer: coarse)').matches;
   let installEvt = null;
   const dismissed = () => store.get('wt.installDismissed') === '1';
+  const isAndroid = /android/i.test(navigator.userAgent);
   function showInstall(msg, canPrompt) {
-    if (standalone || dismissed()) return;
+    if (NATIVE || isAndroid || standalone || dismissed()) return; // 안드로이드는 APK 안내만
     if (msg) $('installMsg').textContent = msg;
     $('installBtn').hidden = !canPrompt;
     $('installBox').hidden = false;
   }
   window.addEventListener('beforeinstallprompt', (e) => { e.preventDefault(); installEvt = e; showInstall(null, true); });
   window.addEventListener('appinstalled', () => { $('installBox').hidden = true; toast('설치됐어요. 홈 화면의 무전기 아이콘으로 열어 주세요.'); });
-  if (isIOS && !standalone) showInstall('Safari 아래쪽 공유 버튼(□↑) → ‘홈 화면에 추가’를 누르면 설치돼요.', false);
+  if (isAndroid && !NATIVE) {
+    // 안드로이드: 설치형 앱(화면이 꺼져도 수신) 내려받기 안내
+    if (store.get('wt.apkDismissed') !== '1') {
+      $('installTitle').textContent = '안드로이드 앱 받기';
+      $('installMsg').textContent = '앱으로 쓰면 화면이 꺼져도 무전이 들리고, 볼륨(-) 버튼으로 말할 수 있어요.';
+      $('installBtn').hidden = true; $('apkLink').hidden = false; $('installBox').hidden = false;
+    }
+  } else if (isIOS && !standalone) showInstall('Safari 아래쪽 공유 버튼(□↑) → ‘홈 화면에 추가’를 누르면 설치돼요.', false);
   else if (isMobile && !standalone) setTimeout(() => { if (!installEvt) showInstall('브라우저 메뉴(⋮) → ‘앱 설치’ 또는 ‘홈 화면에 추가’를 눌러 주세요.', false); }, 3000);
   $('installBtn').addEventListener('click', async () => {
     if (!installEvt) return;
@@ -878,7 +915,7 @@ dialog::backdrop{background:rgba(10,12,10,.45)}
     installEvt = null;
     if (outcome === 'accepted') $('installBox').hidden = true;
   });
-  $('installClose').addEventListener('click', () => { $('installBox').hidden = true; store.set('wt.installDismissed', '1'); });
+  $('installClose').addEventListener('click', () => { $('installBox').hidden = true; store.set(isAndroid ? 'wt.apkDismissed' : 'wt.installDismissed', '1'); });
 
   // 화면(탭·앱)을 닫으면 바로 연결을 끊어 명단에 이름이 남지 않게 함. 뒤로가기 캐시에서 돌아오면 다시 연결
   window.addEventListener('pagehide', () => { stopTalking(); socket.disconnect(); });

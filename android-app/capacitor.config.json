@@ -1,0 +1,14 @@
+{
+  "appId": "com.qmast.walkietalkie",
+  "appName": "모두의 무전기",
+  "webDir": "www",
+  "server": {
+    "url": "https://walkie-talkie-1zpg.onrender.com",
+    "cleartext": false,
+    "androidScheme": "https"
+  },
+  "android": {
+    "allowMixedContent": false,
+    "backgroundColor": "#2b2f2c"
+  }
+}

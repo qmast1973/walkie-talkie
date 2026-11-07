@@ -1,0 +1,16 @@
+{
+  "name": "walkie-talkie-android",
+  "private": true,
+  "version": "1.0.0",
+  "description": "모두의 무전기 안드로이드 앱(Capacitor 껍데기: 서버 화면을 띄우고 백그라운드 수신·하드웨어 PTT 제공)",
+  "scripts": {
+    "sync": "cap sync android"
+  },
+  "dependencies": {
+    "@capacitor/android": "6.2.1",
+    "@capacitor/core": "6.2.1"
+  },
+  "devDependencies": {
+    "@capacitor/cli": "6.2.1"
+  }
+}

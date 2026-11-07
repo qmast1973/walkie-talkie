@@ -19,7 +19,8 @@ app.use(express.static(path.join(__dirname, 'public')));
 app.get('/healthz', (_req, res) => res.send('ok'));
 
 const server = http.createServer(app);
-const io = new Server(server, { maxHttpBufferSize: 64 * 1024 });
+// 끊긴 연결을 빨리 알아채도록 핑 간격을 짧게(기본 25초+20초 → 10초+10초)
+const io = new Server(server, { maxHttpBufferSize: 64 * 1024, pingInterval: 10_000, pingTimeout: 10_000 });
 
 /** @type {Map<string, {id:string,key:string,socketId:string|null,online:boolean,graceTimer:any,nick:string,roomId:string|null,channelId:string|null,color:number}>} */
 const users = new Map();
@@ -180,9 +181,26 @@ io.on('connection', (socket) => {
     nick = clean(nick, 16);
     if (!nick) return ack(cb, { ok: false, error: '닉네임을 입력해 주세요.' });
     key = typeof key === 'string' && /^[A-Za-z0-9_-]{16,64}$/.test(key) ? key : null;
+    const nickKey = nick.normalize('NFC').toLowerCase().replace(/\s+/g, '');
     let u = key && users.get(keys.get(key));
-    // 같은 키로 이미 다른 창이 접속 중이면 새 사용자로 취급(탭 복제 등)
-    if (u && u.online && u.socketId !== socket.id) u = null;
+    const sameNick = [...users.values()].find((x) => x !== u && x.nick.normalize('NFC').toLowerCase().replace(/\s+/g, '') === nickKey);
+    if (sameNick) {
+      if (sameNick.online) {
+        return ack(cb, { ok: false, nickTaken: true, error: `‘${sameNick.nick}’은(는) 지금 다른 사람이 쓰고 있어요. 다른 닉네임을 정해 주세요.` });
+      }
+      // 연결이 끊긴 채 자리만 남아 있는 같은 닉네임 → 새로 만들지 않고 그 자리를 이어받음
+      if (!u || !u.roomId) {
+        if (u) { users.delete(u.id); keys.delete(u.key); clearTimeout(u.graceTimer); if (u.socketId && u.socketId !== socket.id) io.sockets.sockets.get(u.socketId)?.disconnect(true); }
+        u = sameNick;
+      } else {
+        return ack(cb, { ok: false, nickTaken: true, error: `‘${sameNick.nick}’은(는) 이미 쓰이고 있어요. 다른 닉네임을 정해 주세요.` });
+      }
+    }
+    // 같은 기기(같은 키)로 다른 창이 접속 중이면 이전 창을 끊고 이 창으로 넘김
+    if (u && u.online && u.socketId && u.socketId !== socket.id) {
+      const old = io.sockets.sockets.get(u.socketId);
+      if (old) { old.emit('replaced'); old.data.uid = null; old.disconnect(true); }
+    }
     if (u) {
       clearTimeout(u.graceTimer);
       u.graceTimer = null;

@@ -382,12 +382,20 @@ dialog::backdrop{background:rgba(10,12,10,.45)}
     if (nick) {
       const r = await hello(nick);
       if (r.ok) { if (S.wasInRoom) toast(r.room ? '다시 연결됐어요. 원래 채널로 돌아왔어요.' : '연결이 오래 끊겨 방에서 나왔어요. 다시 들어가 주세요.'); S.wasInRoom = false; return; }
+      $('entryErr').textContent = r.error || '';
     }
     $('nickInput').value = nick || '';
     show('viewEntry');
   });
   // 탭마다 하나의 재접속 키(sessionStorage) → 끊겼다 돌아와도 같은 사람으로 방·채널 유지
-  const ss = { get(k) { try { return sessionStorage.getItem(k); } catch { return null; } }, set(k, v) { try { sessionStorage.setItem(k, v); } catch {} } };
+  // 재접속 키는 기기에 저장(localStorage) → 새로고침·앱 다시 열기에도 같은 사람으로 이어짐
+  const ss = store;
+  socket.on('replaced', () => {
+    S.replaced = true; stopTalking(true);
+    $('connText').textContent = '다른 창에서 접속함';
+    $('entryErr').textContent = '같은 기기의 다른 창(또는 탭)에서 접속해서 이 창은 연결을 끊었어요. 이 창에서 쓰려면 다시 입장해 주세요.';
+    show('viewEntry');
+  });
   async function hello(nick) {
     const r = await emitAck('hello', { nick, key: ss.get('wt.key') });
     if (!r.ok) return r;
@@ -405,8 +413,9 @@ dialog::backdrop{background:rgba(10,12,10,.45)}
   $('entryForm').addEventListener('submit', async (e) => {
     e.preventDefault();
     const nick = $('nickInput').value.trim();
+    if (S.replaced) { S.replaced = false; store.set('wt.nick', nick); socket.connect(); return; } // 연결되면 자동 입장
     const r = await hello(nick);
-    if (!r.ok) { $('entryErr').textContent = r.error; return; }
+    if (!r.ok) { $('entryErr').textContent = r.error; if (r.nickTaken) $('nickInput').select(); return; }
     store.set('wt.nick', nick);
   });
 

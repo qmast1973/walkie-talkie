@@ -156,12 +156,47 @@ dialog::backdrop{background:rgba(10,12,10,.45)}
 .toast{position:fixed;left:50%;bottom:calc(20px + env(safe-area-inset-bottom,0px));transform:translateX(-50%);
   background:var(--ink);color:var(--bg);padding:10px 16px;border-radius:10px;font-size:14px;max-width:calc(100vw - 32px);z-index:50}
 
+.m-top,.chips{display:none}
+.input{font-size:16px} /* iOS 확대 방지 */
+
+/* ===== 휴대폰: 앱 화면처럼 ===== */
 @media (max-width:860px){
-  .device{position:static;order:-1;padding:14px 14px 16px}
+  body.in-room .top{display:none}
+  body.in-room .wrap{padding-top:8px;padding-bottom:calc(250px + env(safe-area-inset-bottom,0px))}
+  .m-top{display:flex;align-items:center;gap:10px;position:sticky;top:0;z-index:15;background:var(--bg);
+    margin:0 0 10px;padding:6px 0}
+  .m-back{border:1px solid var(--line);background:var(--panel);border-radius:999px;padding:8px 14px;font-weight:600;flex:none}
+  .m-title{min-width:0;flex:1;display:flex;flex-direction:column;line-height:1.25}
+  .m-title strong{font-size:17px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+  .m-title span{font-size:12px;color:var(--muted)}
+  .side .box:first-child{display:none}          /* 방 이름 상자 → 상단바로 대체 */
+  .side .box.chan-box{display:none}             /* 채널 목록 → 칩으로 대체 */
+  .roomview{display:flex;flex-direction:column;align-items:stretch;gap:12px}
+  #lcdRoom{visibility:hidden}
+  .device{position:static;order:-1;padding:12px;border-radius:18px;box-shadow:none}
   .grille{display:none}
-  .lcd{min-height:0}
-  .ptt-wrap{padding:16px 0 4px}
-  .ptt{width:min(46vw,170px)}
+  .lcd{min-height:0;padding:10px 12px;gap:2px}
+  .lcd .ch{font-size:24px}
+  .chips{display:flex;gap:8px;overflow-x:auto;padding:12px 2px 2px;scrollbar-width:none;-webkit-overflow-scrolling:touch}
+  .chips::-webkit-scrollbar{display:none}
+  .chip{flex:none;display:flex;align-items:center;gap:6px;border:1px solid rgba(255,255,255,.18);background:transparent;
+    color:var(--device-ink);border-radius:999px;padding:9px 14px;font-size:15px;font-weight:600;min-height:42px;white-space:nowrap}
+  .chip .n{font-family:var(--font-mono);font-size:12px;opacity:.65}
+  .chip.on{background:var(--lcd);color:var(--lcd-ink);border-color:var(--lcd)}
+  .chip.locked{opacity:.45}
+  .chip.talk::after{content:"";width:8px;height:8px;border-radius:50%;background:#ff5a5f;box-shadow:0 0 8px #ff5a5f}
+  .chip.add{border-style:dashed}
+  .dock{position:fixed;left:0;right:0;bottom:0;z-index:20;background:var(--device);color:var(--device-ink);
+    border-radius:22px 22px 0 0;box-shadow:0 -10px 30px -12px rgba(0,0,0,.5);
+    padding:14px max(16px,env(safe-area-inset-right,0px)) calc(12px + env(safe-area-inset-bottom,0px)) max(16px,env(safe-area-inset-left,0px))}
+  .ptt-wrap{padding:0}
+  .ptt{width:100%;max-width:520px;aspect-ratio:auto;height:150px;border-radius:24px;font-size:26px}
+  .ptt small{font-size:14px;margin-top:2px}
+  .ptt.tx{box-shadow:0 1px 0 #6d1418,0 0 0 6px color-mix(in srgb,var(--tx) 35%,transparent)}
+  .dev-row{max-width:520px;margin:12px auto 0}
+  .hint{display:none}
+  .grid{display:flex;flex-direction:column}
+  .grid .box:last-child{order:-1}               /* 대기실: 방 목록을 먼저 */
 }
 @media (prefers-reduced-motion:reduce){*{transition:none!important}}
 </style>
@@ -209,6 +244,11 @@ dialog::backdrop{background:rgba(10,12,10,.45)}
 
   <!-- 3. 방 -->
   <section id="viewRoom" hidden>
+    <div class="m-top">
+      <button class="m-back" id="mLeaveBtn" type="button" aria-label="대기실로 나가기">‹ 대기실</button>
+      <div class="m-title"><strong id="mRoomTitle"></strong><span class="mono" id="mRoomMeta"></span></div>
+      <span class="dot" id="mConnDot" aria-hidden="true"></span>
+    </div>
     <div class="roomview">
       <div class="side">
         <div class="box">
@@ -220,7 +260,7 @@ dialog::backdrop{background:rgba(10,12,10,.45)}
             <button class="btn small" id="leaveRoomBtn">대기실로 나가기</button>
           </div>
         </div>
-        <div class="box">
+        <div class="box chan-box">
           <div class="box-head"><h2>채널</h2><button class="btn small" id="newChanBtn">+ 채널 만들기</button></div>
           <ul class="channels" id="chanList"></ul>
           <p class="label" style="margin:10px 2px 0">채널은 이 방에 들어온 사람만 볼 수 있어요. ‘선택 인원’ 채널은 지정한 사람만 듣고 말할 수 있어요.</p>
@@ -242,13 +282,16 @@ dialog::backdrop{background:rgba(10,12,10,.45)}
             <span class="meter" id="meter" aria-hidden="true"></span>
           </div>
         </div>
+        <div class="chips" id="chipList" role="tablist" aria-label="채널 선택"></div>
+        <div class="dock">
         <div class="ptt-wrap">
           <button class="ptt" id="pttBtn" type="button" aria-label="누르고 있는 동안 말하기">
             <span>PTT<small id="pttSub">마이크 켜기</small></span>
           </button>
         </div>
         <div class="dev-row"><span class="led" id="led"></span><span>음량</span><input type="range" id="vol" min="0" max="2" step="0.05" value="1" aria-label="수신 음량"></div>
-        <div class="hint">버튼을 누르고 있는 동안 송신돼요 · 키보드는 스페이스바</div>
+        <div class="hint" id="pttHint">버튼을 누르고 있는 동안 송신돼요 · 키보드는 스페이스바</div>
+        </div>
       </aside>
     </div>
   </section>
@@ -314,6 +357,7 @@ dialog::backdrop{background:rgba(10,12,10,.45)}
   }
   function show(view) {
     for (const v of ['viewEntry', 'viewLobby', 'viewRoom']) $(v).hidden = v !== view;
+    document.body.classList.toggle('in-room', view === 'viewRoom');
   }
   function el(tag, attrs = {}, ...kids) {
     const n = document.createElement(tag);
@@ -333,7 +377,7 @@ dialog::backdrop{background:rgba(10,12,10,.45)}
 
   // ---------- 연결 ----------
   socket.on('connect', async () => {
-    $('connDot').classList.add('on'); $('connText').textContent = '연결됨';
+    $('connDot').classList.add('on'); $('mConnDot').classList.add('on'); $('connText').textContent = '연결됨';
     const nick = store.get('wt.nick');
     if (nick) {
       const r = await hello(nick);
@@ -353,7 +397,7 @@ dialog::backdrop{background:rgba(10,12,10,.45)}
     return r;
   }
   socket.on('disconnect', () => {
-    $('connDot').classList.remove('on'); $('connText').textContent = '연결 끊김 · 다시 연결 중…';
+    $('connDot').classList.remove('on'); $('mConnDot').classList.remove('on'); $('connText').textContent = '연결 끊김 · 다시 연결 중…';
     S.wasInRoom = !!S.room; stopTalking(true);
   });
   socket.on('toast', toast);
@@ -428,6 +472,8 @@ dialog::backdrop{background:rgba(10,12,10,.45)}
 
   function enterRoom(room) { S.room = room; renderRoom(); show('viewRoom'); requestWakeLock(); }
 
+  $('mLeaveBtn').addEventListener('click', () => $('leaveRoomBtn').click());
+  if (matchMedia('(pointer: coarse)').matches) $('pttHint').textContent = '버튼을 누르고 있는 동안 송신돼요';
   $('leaveRoomBtn').addEventListener('click', async () => {
     stopTalking(); await emitAck('room:leave'); S.room = null; renderLobby(); show('viewLobby');
   });
@@ -467,6 +513,19 @@ dialog::backdrop{background:rgba(10,12,10,.45)}
         m.online === false ? el('span', { class: 'tag' }, '연결 끊김') : null,
         el('span', { class: 'where' }, ch ? ch.name : ''));
     }));
+
+    // 휴대폰 상단바 + 채널 칩
+    $('mRoomTitle').textContent = room.name;
+    $('mRoomMeta').textContent = `${room.members.length}명 접속 · 채널 ${room.channels.length}개`;
+    $('chipList').replaceChildren(...room.channels.map((c, i) => {
+      const on = cur?.id === c.id, canEdit = c.createdBy === meId || isOwner;
+      return el('button', { type: 'button', role: 'tab', 'aria-selected': on ? 'true' : 'false',
+        class: `chip${on ? ' on' : ''}${c.allowed ? '' : ' locked'}${c.talker ? ' talk' : ''}`,
+        onclick: () => on ? (canEdit ? openChanDlg(c) : toast('채널 설정은 만든 사람이나 방장만 바꿀 수 있어요.'))
+          : c.allowed ? switchChannel(c) : toast('이 채널은 지정된 인원만 쓸 수 있어요.') },
+        el('span', { class: 'n' }, String(i + 1).padStart(2, '0')), c.name, c.members !== null ? ' 🔒' : '', on && canEdit ? ' ⚙' : '');
+    }), el('button', { type: 'button', class: 'chip add', onclick: () => openChanDlg(null) }, '+ 채널'));
+    $('chipList').querySelector('.chip.on')?.scrollIntoView({ block: 'nearest', inline: 'nearest' });
 
     // LCD
     const idx = room.channels.findIndex((c) => c.id === cur?.id);

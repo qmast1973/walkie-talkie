@@ -15,6 +15,7 @@ const MAX_ROOMS = 200;
 const GRACE_MS = Number(process.env.GRACE_MS) || 45_000; // 방에 있던 사람: 연결이 끊겨도 이 시간 동안은 방·채널 자리를 유지
 const LOBBY_GRACE_MS = Number(process.env.LOBBY_GRACE_MS) || 10_000; // 대기실에만 있던 사람: 금방 명단에서 정리
 const ROOM_IDLE_MS = 24 * 60 * 60_000; // 아무도 없는 방은 24시간 뒤 자동 삭제(방장은 언제든 직접 삭제 가능)
+const OWNER_AWAY_MS = Number(process.env.OWNER_AWAY_MS) || 5 * 60_000; // 방장이 이 시간 넘게 방에 없으면 방에 있는 사람에게 방장 위임
 const GHOST_MS = 24 * 60 * 60_000; // 대기 모드 등으로 끊긴 사람의 '방·채널 자리'를 기억하는 시간
 
 // 지금 돌고 있는 코드 버전(커밋). Render는 RENDER_GIT_COMMIT을 넣어 줌
@@ -192,6 +193,23 @@ function deleteRoom(room, reason) {
   rooms.delete(room.id);
   broadcastLobby();
 }
+
+// 방장이 오래 자리를 비우면(앱 재설치 등으로 돌아올 수 없는 경우 포함) 방에 있는 사람에게 방장 위임
+function checkOwner(room, now = Date.now()) {
+  const present = roomMembers(room).filter((m) => m.online);
+  if (present.some((m) => m.id === room.ownerId)) { room.ownerAwaySince = null; return; }
+  if (!present.length) return;
+  if (!room.ownerAwaySince) room.ownerAwaySince = now;
+  if (now - room.ownerAwaySince < OWNER_AWAY_MS) return;
+  // 이 방에 먼저 들어왔던 순서대로 지금 접속 중인 사람을 찾음
+  const next = [...room.known.keys()].map((id) => present.find((m) => m.id === id)).find(Boolean) || present[0];
+  room.ownerId = next.id;
+  room.ownerAwaySince = null;
+  io.to('u:' + next.id).emit('toast', `방장이 오래 자리를 비워서 ‘${room.name}’ 방의 방장을 이어받았어요.`);
+  broadcastRoom(room);
+  broadcastLobby();
+}
+setInterval(() => { const now = Date.now(); for (const room of rooms.values()) checkOwner(room, now); }, Math.min(30_000, OWNER_AWAY_MS / 2));
 
 // 빈 방·오래된 자리 정리(1분마다)
 setInterval(() => {

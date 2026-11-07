@@ -260,6 +260,7 @@ dialog::backdrop{background:rgba(10,12,10,.45)}
           <button class="btn primary" type="submit">방 만들기</button>
         </form>
         <p class="err" id="lobbyErr"></p>
+        <p class="label mono" id="verText" style="margin:6px 2px 0"></p>
       </div>
     </div>
   </section>
@@ -422,6 +423,7 @@ dialog::backdrop{background:rgba(10,12,10,.45)}
     const r = await emitAck('hello', { nick, key: ss.get('wt.key') });
     if (!r.ok) return r;
     ss.set('wt.key', r.key);
+    $('verText').textContent = r.version ? `서버 버전 ${r.version}` : '';
     S.me = r.me; S.lobby = r.lobby;
     if (r.room) enterRoom(r.room); else { S.room = null; renderLobby(); show('viewLobby'); }
     return r;

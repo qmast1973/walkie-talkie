@@ -14,9 +14,20 @@ const MAX_CHANNELS = 12;
 const MAX_ROOMS = 200;
 const GRACE_MS = 45_000; // 연결이 끊겨도 이 시간 동안은 방·채널 자리를 유지
 
+// 지금 돌고 있는 코드 버전(커밋). Render는 RENDER_GIT_COMMIT을 넣어 줌
+const VERSION = (() => {
+  if (process.env.RENDER_GIT_COMMIT) return process.env.RENDER_GIT_COMMIT.slice(0, 7);
+  try {
+    return require('child_process').execSync('git rev-parse --short HEAD', { cwd: __dirname, stdio: ['ignore', 'pipe', 'ignore'] }).toString().trim();
+  } catch {
+    return 'dev';
+  }
+})();
+
 const app = express();
 app.use(express.static(path.join(__dirname, 'public')));
 app.get('/healthz', (_req, res) => res.send('ok'));
+app.get('/version', (_req, res) => res.json({ version: VERSION }));
 
 const server = http.createServer(app);
 // 끊긴 연결을 빨리 알아채도록 핑 간격을 짧게(기본 25초+20초 → 10초+10초)
@@ -220,7 +231,7 @@ io.on('connection', (socket) => {
     if (room && u.channelId) socket.join(`ch:${u.channelId}`);
     if (room) broadcastRoom(room);
     broadcastLobby();
-    ack(cb, { ok: true, key: u.key, me: { id: u.id, nick: u.nick, color: u.color }, lobby: lobbyState(), room: room ? roomStateFor(room, u.id) : null });
+    ack(cb, { ok: true, version: VERSION, key: u.key, me: { id: u.id, nick: u.nick, color: u.color }, lobby: lobbyState(), room: room ? roomStateFor(room, u.id) : null });
   });
 
   const me = () => (socket.data.uid ? users.get(socket.data.uid) : undefined);

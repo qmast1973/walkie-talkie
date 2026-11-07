@@ -15,7 +15,7 @@ const MAX_ROOMS = 200;
 const GRACE_MS = Number(process.env.GRACE_MS) || 45_000; // 방에 있던 사람: 연결이 끊겨도 이 시간 동안은 방·채널 자리를 유지
 const LOBBY_GRACE_MS = Number(process.env.LOBBY_GRACE_MS) || 10_000; // 대기실에만 있던 사람: 금방 명단에서 정리
 const ROOM_IDLE_MS = 24 * 60 * 60_000; // 아무도 없는 방은 24시간 뒤 자동 삭제(방장은 언제든 직접 삭제 가능)
-const OWNER_AWAY_MS = Number(process.env.OWNER_AWAY_MS) || 5 * 60_000; // 방장이 이 시간 넘게 방에 없으면 방에 있는 사람에게 방장 위임
+const OWNER_AWAY_MS = Number(process.env.OWNER_AWAY_MS) || 60_000; // 방장이 이 시간 넘게 방에 없으면 방에 있는 사람에게 방장 위임
 const GHOST_MS = 24 * 60 * 60_000; // 대기 모드 등으로 끊긴 사람의 '방·채널 자리'를 기억하는 시간
 
 // 지금 돌고 있는 코드 버전(커밋). Render는 RENDER_GIT_COMMIT을 넣어 줌
@@ -209,7 +209,7 @@ function checkOwner(room, now = Date.now()) {
   broadcastRoom(room);
   broadcastLobby();
 }
-setInterval(() => { const now = Date.now(); for (const room of rooms.values()) checkOwner(room, now); }, Math.min(30_000, OWNER_AWAY_MS / 2));
+setInterval(() => { const now = Date.now(); for (const room of rooms.values()) checkOwner(room, now); }, Math.min(10_000, OWNER_AWAY_MS / 2));
 
 // 빈 방·오래된 자리 정리(1분마다)
 setInterval(() => {

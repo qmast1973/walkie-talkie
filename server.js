@@ -327,6 +327,32 @@ io.on('connection', (socket) => {
     ack(cb, { ok: true });
   });
 
+  // 방장이 사람 내보내기(대기 모드로 남은 자리 정리 포함)
+  socket.on('room:kick', ({ userId } = {}, cb) => {
+    const u = me();
+    const room = u && rooms.get(u.roomId);
+    if (!room) return ack(cb, { ok: false, error: '방에 들어가 있어야 해요.' });
+    if (room.ownerId !== u.id) return ack(cb, { ok: false, error: '방장만 내보낼 수 있어요.' });
+    if (userId === u.id) return ack(cb, { ok: false, error: '자기 자신은 내보낼 수 없어요.' });
+    if (!room.known.has(userId)) return ack(cb, { ok: false, error: '이 방에 없는 사람이에요.' });
+    room.known.delete(userId);
+    for (const ch of room.channels.values()) {
+      if (Array.isArray(ch.members)) ch.members = ch.members.filter((id) => id !== userId);
+    }
+    const live = users.get(userId);
+    if (live && live.roomId === room.id) {
+      leaveChannel(live);
+      live.roomId = null;
+      io.to('u:' + live.id).emit('room:kicked', { roomId: room.id, roomName: room.name });
+    }
+    const ghost = ghosts.get(userId);
+    if (ghost && ghost.lastRoomId === room.id) ghost.lastRoomId = null;
+    if (roomMembers(room).length === 0) room.emptySince = Date.now();
+    broadcastRoom(room);
+    broadcastLobby();
+    ack(cb, { ok: true });
+  });
+
   socket.on('room:leave', (_p, cb) => {
     const u = me();
     if (u) leaveRoom(u);

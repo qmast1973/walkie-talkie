@@ -92,7 +92,8 @@ h1,h2,h3{margin:0;text-wrap:balance;line-height:1.25}
 .tag{font-size:11px;padding:1px 6px;border-radius:999px;border:1px solid var(--line);color:var(--muted);white-space:nowrap}
 .tag.me{border-color:var(--accent);color:var(--accent)}
 .tag.tx{background:var(--tx);border-color:var(--tx);color:#fff}
-.person.away{opacity:.55}
+.person.away .nm,.person.away .avatar,.person.away .where{opacity:.55}
+.person .kick{flex:none;padding:3px 8px;font-size:12px}
 .group-label{margin:10px 4px 2px}
 .empty{color:var(--muted);font-size:14px;padding:10px 4px}
 
@@ -192,7 +193,7 @@ a.btn{text-decoration:none;display:inline-block;text-align:center}
   .m-back{border:1px solid var(--line);background:var(--panel);border-radius:999px;padding:8px 14px;font-weight:600;flex:none}
   .m-title{min-width:0;flex:1;display:flex;flex-direction:column;line-height:1.25}
   .m-title strong{font-size:17px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
-  .m-title span{font-size:12px;color:var(--muted)}
+  .m-title span{font-size:12px;color:var(--muted);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
   .side .box:first-child{display:none}          /* 방 이름 상자 → 상단바로 대체 */
   .side .box.chan-box{display:none}             /* 채널 목록 → 칩으로 대체 */
   .roomview{display:flex;flex-direction:column;align-items:stretch;gap:12px}
@@ -511,6 +512,22 @@ a.btn{text-decoration:none;display:inline-block;text-align:center}
   });
   socket.on('toast', toast);
 
+  // ---------- 내보내기(방장) ----------
+  function kickBtn(m, room) {
+    if (room.ownerId !== S.me?.id || m.id === S.me.id) return null;
+    return el('button', { class: 'btn small danger kick', type: 'button', 'aria-label': `${m.nick} 내보내기`, onclick: async (e) => {
+      const btn = e.currentTarget;
+      if (!armed.get(btn)) { armed.set(btn, true); btn.textContent = '한 번 더'; setTimeout(() => { armed.delete(btn); btn.textContent = '내보내기'; }, 3000); return; }
+      const r = await emitAck('room:kick', { userId: m.id });
+      if (r.ok) toast(`‘${m.nick}’ 님을 내보냈어요.`); else toast(r.error);
+    } }, '내보내기');
+  }
+  socket.on('room:kicked', ({ roomId, roomName }) => {
+    if (S.room?.id !== roomId) return;
+    stopTalking(true); S.room = null; renderLobby(); show('viewLobby');
+    toast(`방장이 ‘${roomName}’ 방에서 내보냈어요.`);
+  });
+
   // ---------- 방 삭제(방장) ----------
   const armed = new WeakMap();
   async function deleteRoom(r, btn) {
@@ -644,11 +661,13 @@ a.btn{text-decoration:none;display:inline-block;text-align:center}
         m.id === room.ownerId ? el('span', { class: 'tag' }, '방장') : null,
         talking ? el('span', { class: 'tag tx' }, '송신') : null,
         m.online === false ? el('span', { class: 'tag' }, '연결 끊김') : null,
-        el('span', { class: 'where' }, ch ? ch.name : ''));
+        el('span', { class: 'where' }, ch ? ch.name : ''),
+        kickBtn(m, room));
     }), ...(room.known || []).filter((k) => !k.here).map((k) =>
       el('li', { class: 'person away' }, avatar(k), el('span', { class: 'nm' }, k.nick),
         k.id === room.ownerId ? el('span', { class: 'tag' }, '방장') : null,
-        el('span', { class: 'where' }, '대기 모드·나감'))));
+        el('span', { class: 'where' }, '대기 모드·나감'),
+        kickBtn(k, room))));
     $('roomDeleteBtn').hidden = $('mRoomDeleteBtn').hidden = room.ownerId !== meId;
 
     // 휴대폰 상단바 + 채널 칩

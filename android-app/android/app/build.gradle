@@ -32,7 +32,7 @@ android {
     }
     buildTypes {
         release {
-            signingConfig (ks && file(ks).exists()) ? signingConfigs.walkie : signingConfigs.debug
+            signingConfig = (ks && file(ks).exists()) ? signingConfigs.walkie : signingConfigs.debug
             minifyEnabled false
             proguardFiles getDefaultProguardFile('proguard-android.txt'), 'proguard-rules.pro'
         }

@@ -55,7 +55,12 @@ public class WalkiePlugin extends Plugin {
     public void info(PluginCall call) {
         JSObject r = new JSObject();
         r.put("batteryExempt", isBatteryExempt(getContext()));
-        r.put("version", BuildConfig.VERSION_NAME);
+        String ver = "";
+        try {
+            ver = getContext().getPackageManager().getPackageInfo(getContext().getPackageName(), 0).versionName;
+        } catch (Exception ignored) {
+        }
+        r.put("version", ver);
         call.resolve(r);
     }
 

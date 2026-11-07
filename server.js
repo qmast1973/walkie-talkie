@@ -12,8 +12,10 @@ const PORT = process.env.PORT || 3000;
 const MAX_TALK_MS = 60_000; // 한 번에 최대 60초 송신
 const MAX_CHANNELS = 12;
 const MAX_ROOMS = 200;
-const GRACE_MS = 45_000; // 방에 있던 사람: 연결이 끊겨도 이 시간 동안은 방·채널 자리를 유지
-const LOBBY_GRACE_MS = 10_000; // 대기실에만 있던 사람: 금방 명단에서 정리
+const GRACE_MS = Number(process.env.GRACE_MS) || 45_000; // 방에 있던 사람: 연결이 끊겨도 이 시간 동안은 방·채널 자리를 유지
+const LOBBY_GRACE_MS = Number(process.env.LOBBY_GRACE_MS) || 10_000; // 대기실에만 있던 사람: 금방 명단에서 정리
+const ROOM_IDLE_MS = 24 * 60 * 60_000; // 아무도 없는 방은 24시간 뒤 자동 삭제(방장은 언제든 직접 삭제 가능)
+const GHOST_MS = 24 * 60 * 60_000; // 대기 모드 등으로 끊긴 사람의 '방·채널 자리'를 기억하는 시간
 
 // 지금 돌고 있는 코드 버전(커밋). Render는 RENDER_GIT_COMMIT을 넣어 줌
 const VERSION = (() => {
@@ -38,6 +40,8 @@ const io = new Server(server, { maxHttpBufferSize: 64 * 1024, pingInterval: 10_0
 const users = new Map();
 /** 재접속용 비밀 키 → 공개 user id */
 const keys = new Map();
+/** 연결이 끊겨 명단에서 빠졌지만 돌아오면 원래 방·채널로 복귀시킬 사람: id → {id,key,nick,color,lastRoomId,lastChannelId,at} */
+const ghosts = new Map();
 /** @type {Map<string, {id:string,name:string,ownerId:string,passHash:string|null,channels:Map<string,any>,createdAt:number}>} */
 const rooms = new Map();
 
@@ -84,8 +88,10 @@ function lobbyState() {
         id: r.id,
         name: r.name,
         locked: !!r.passHash,
-        count: roomMembers(r).length,
-        ownerNick: users.get(r.ownerId)?.nick ?? '',
+        count: roomMembers(r).filter((m) => m.online).length,
+        ownerId: r.ownerId,
+        ownerNick: users.get(r.ownerId)?.nick ?? r.known.get(r.ownerId) ?? '',
+        emptySince: r.emptySince,
         createdAt: r.createdAt,
       }))
       .sort((a, b) => a.createdAt - b.createdAt),
@@ -99,6 +105,11 @@ function roomStateFor(room, viewerId) {
     ownerId: room.ownerId,
     locked: !!room.passHash,
     members: roomMembers(room).map((u) => ({ id: u.id, nick: u.nick, color: u.color, channelId: u.channelId, online: u.online })),
+    // 이 방에 들어왔던 적이 있는 사람 전체(대기 모드로 빠진 사람 포함) — 선택 인원 채널 지정에 사용
+    known: [...room.known].map(([id, nick]) => {
+      const live = users.get(id);
+      return { id, nick: live?.nick ?? nick, color: live?.color ?? ghosts.get(id)?.color ?? 0, here: live?.roomId === room.id };
+    }),
     channels: [...room.channels.values()].map((c) => ({
       id: c.id,
       name: c.name,
@@ -156,22 +167,41 @@ function leaveRoom(u) {
   leaveChannel(u);
   u.roomId = null;
   if (!room) return;
-  const left = roomMembers(room);
-  if (left.length === 0) {
-    rooms.delete(room.id);
-  } else {
-    // 방장이 나가면 가장 먼저 남아 있던 사람에게 방장 위임
-    if (room.ownerId === u.id) room.ownerId = left[0].id;
-    // 나간 사람만 들어있던 전용 채널은 그대로 두되, 명단에서 제거
-    for (const ch of room.channels.values()) {
-      if (Array.isArray(ch.members)) ch.members = ch.members.filter((id) => id !== u.id);
-      if (ch.createdBy === u.id && !ch.isDefault && Array.isArray(ch.members) && ch.members.length === 0) {
-        room.channels.delete(ch.id);
-      }
-    }
-    broadcastRoom(room);
-  }
+  // 방은 비어도 지우지 않음(24시간 뒤 자동 정리). 채널과 선택 인원 권한도 그대로 유지
+  if (roomMembers(room).length === 0) room.emptySince = Date.now();
+  broadcastRoom(room);
 }
+
+function enterRoom(u, room, preferChannelId) {
+  if (u.roomId !== room.id) leaveRoom(u);
+  u.roomId = room.id;
+  room.known.set(u.id, u.nick);
+  room.emptySince = null;
+  const pref = preferChannelId && room.channels.get(preferChannelId);
+  const main = [...room.channels.values()].find((c) => c.isDefault);
+  joinChannel(u, room, pref && canUseChannel(room, pref, u.id) ? pref : main);
+}
+
+function deleteRoom(room, reason) {
+  for (const m of roomMembers(room)) {
+    leaveChannel(m);
+    m.roomId = null;
+    io.to('u:' + m.id).emit('room:deleted', { roomId: room.id, reason });
+  }
+  rooms.delete(room.id);
+  broadcastLobby();
+}
+
+// 빈 방·오래된 자리 정리(1분마다)
+setInterval(() => {
+  const now = Date.now();
+  for (const room of rooms.values()) {
+    if (room.emptySince && now - room.emptySince > ROOM_IDLE_MS) deleteRoom(room, 'idle');
+  }
+  for (const g of ghosts.values()) {
+    if (now - g.at > GHOST_MS) { ghosts.delete(g.id); keys.delete(g.key); }
+  }
+}, 60_000);
 
 // 송신 시간 제한 감시
 setInterval(() => {
@@ -195,6 +225,7 @@ io.on('connection', (socket) => {
     key = typeof key === 'string' && /^[A-Za-z0-9_-]{16,64}$/.test(key) ? key : null;
     const nickKey = nick.normalize('NFC').toLowerCase().replace(/\s+/g, '');
     let u = key && users.get(keys.get(key));
+    let ghost = !u && key ? ghosts.get(keys.get(key)) : null;
     const sameNick = [...users.values()].find((x) => x !== u && x.nick.normalize('NFC').toLowerCase().replace(/\s+/g, '') === nickKey);
     if (sameNick) {
       if (sameNick.online) {
@@ -204,6 +235,7 @@ io.on('connection', (socket) => {
       if (!u || !u.roomId) {
         if (u) { users.delete(u.id); keys.delete(u.key); clearTimeout(u.graceTimer); if (u.socketId && u.socketId !== socket.id) io.sockets.sockets.get(u.socketId)?.disconnect(true); }
         u = sameNick;
+        ghost = null;
       } else {
         return ack(cb, { ok: false, nickTaken: true, error: `‘${sameNick.nick}’은(는) 이미 쓰이고 있어요. 다른 닉네임을 정해 주세요.` });
       }
@@ -216,6 +248,12 @@ io.on('connection', (socket) => {
     if (u) {
       clearTimeout(u.graceTimer);
       u.graceTimer = null;
+    } else if (ghost) {
+      // 대기 모드 등으로 오래 끊겼다 돌아온 사람: 같은 id로 되살림(선택 인원 채널 권한 유지)
+      ghosts.delete(ghost.id);
+      key = ghost.key;
+      u = { id: ghost.id, key, socketId: null, online: false, graceTimer: null, nick, roomId: null, channelId: null, color: ghost.color };
+      users.set(u.id, u);
     } else {
       key = uid(24);
       const id = uid(8);
@@ -228,8 +266,10 @@ io.on('connection', (socket) => {
     u.online = true;
     socket.data.uid = u.id;
     socket.join('u:' + u.id);
+    if (ghost && ghost.lastRoomId && rooms.has(ghost.lastRoomId)) enterRoom(u, rooms.get(ghost.lastRoomId), ghost.lastChannelId);
     const room = u.roomId && rooms.get(u.roomId);
     if (room && u.channelId) socket.join(`ch:${u.channelId}`);
+    if (room) room.known.set(u.id, u.nick);
     if (room) broadcastRoom(room);
     broadcastLobby();
     ack(cb, { ok: true, version: VERSION, key: u.key, me: { id: u.id, nick: u.nick, color: u.color }, lobby: lobbyState(), room: room ? roomStateFor(room, u.id) : null });
@@ -250,13 +290,14 @@ io.on('connection', (socket) => {
       ownerId: u.id,
       passHash: password ? hash(clean(password, 32)) : null,
       channels: new Map(),
+      known: new Map(), // id → nick
+      emptySince: null,
       createdAt: Date.now(),
     };
     const main = newChannel('공용', u.id, null, true);
     room.channels.set(main.id, main);
     rooms.set(room.id, room);
-    u.roomId = room.id;
-    joinChannel(u, room, main);
+    enterRoom(u, room);
     broadcastRoom(room);
     broadcastLobby();
     ack(cb, { ok: true, room: roomStateFor(room, u.id) });
@@ -270,15 +311,19 @@ io.on('connection', (socket) => {
     if (room.passHash && hash(clean(password, 32)) !== room.passHash) {
       return ack(cb, { ok: false, error: '비밀번호가 맞지 않아요.', needPassword: true });
     }
-    if (u.roomId !== room.id) {
-      leaveRoom(u);
-      u.roomId = room.id;
-    }
-    const main = [...room.channels.values()].find((c) => c.isDefault);
-    joinChannel(u, room, main);
+    enterRoom(u, room);
     broadcastRoom(room);
     broadcastLobby();
     ack(cb, { ok: true, room: roomStateFor(room, u.id) });
+  });
+
+  socket.on('room:delete', ({ roomId } = {}, cb) => {
+    const u = me();
+    const room = rooms.get(roomId);
+    if (!u || !room) return ack(cb, { ok: false, error: '방을 찾을 수 없어요.' });
+    if (room.ownerId !== u.id) return ack(cb, { ok: false, error: '방장만 방을 삭제할 수 있어요.' });
+    deleteRoom(room, 'owner');
+    ack(cb, { ok: true });
   });
 
   socket.on('room:leave', (_p, cb) => {
@@ -297,8 +342,7 @@ io.on('connection', (socket) => {
     if (room.channels.size >= MAX_CHANNELS) return ack(cb, { ok: false, error: `채널은 방마다 ${MAX_CHANNELS}개까지 만들 수 있어요.` });
     let list = null;
     if (Array.isArray(members)) {
-      const inRoom = new Set(roomMembers(room).map((m) => m.id));
-      list = [...new Set([u.id, ...members.filter((id) => inRoom.has(id))])];
+      list = [...new Set([u.id, ...members.filter((id) => room.known.has(id))])];
     }
     const ch = newChannel(name, u.id, list);
     room.channels.set(ch.id, ch);
@@ -320,8 +364,7 @@ io.on('connection', (socket) => {
     if (!ch.isDefault && members !== undefined) {
       if (members === null) ch.members = null;
       else if (Array.isArray(members)) {
-        const inRoom = new Set(roomMembers(room).map((m) => m.id));
-        ch.members = [...new Set([ch.createdBy, ...members.filter((id) => inRoom.has(id))])].filter((id) => inRoom.has(id) || id === ch.createdBy);
+        ch.members = [...new Set([ch.createdBy, ...members.filter((id) => room.known.has(id))])];
       }
       // 권한이 사라진 사람은 공용 채널로 이동
       const main = [...room.channels.values()].find((c) => c.isDefault);
@@ -407,9 +450,10 @@ io.on('connection', (socket) => {
     if (room) broadcastRoom(room);
     broadcastLobby();
     u.graceTimer = setTimeout(() => {
+      // 명단에서는 빼되, 돌아오면 원래 방·채널로 복귀하도록 자리를 기억
+      ghosts.set(u.id, { id: u.id, key: u.key, nick: u.nick, color: u.color, lastRoomId: u.roomId, lastChannelId: u.channelId, at: Date.now() });
       leaveRoom(u);
       users.delete(u.id);
-      keys.delete(u.key);
       broadcastLobby();
     }, u.roomId ? GRACE_MS : LOBBY_GRACE_MS);
   });

@@ -92,6 +92,7 @@ h1,h2,h3{margin:0;text-wrap:balance;line-height:1.25}
 .tag{font-size:11px;padding:1px 6px;border-radius:999px;border:1px solid var(--line);color:var(--muted);white-space:nowrap}
 .tag.me{border-color:var(--accent);color:var(--accent)}
 .tag.tx{background:var(--tx);border-color:var(--tx);color:#fff}
+.person.away{opacity:.55}
 .group-label{margin:10px 4px 2px}
 .empty{color:var(--muted);font-size:14px;padding:10px 4px}
 
@@ -217,6 +218,7 @@ dialog::backdrop{background:rgba(10,12,10,.45)}
   .ptt.tx{box-shadow:0 1px 0 #6d1418,0 0 0 6px color-mix(in srgb,var(--tx) 35%,transparent)}
   .dev-row{max-width:520px;margin:12px auto 0}
   .hint{display:none}
+  body.in-room .toast{bottom:calc(250px + env(safe-area-inset-bottom,0px))}
   .grid{display:flex;flex-direction:column}
   .grid .box:last-child{order:-1}               /* 대기실: 방 목록을 먼저 */
 }
@@ -284,6 +286,7 @@ dialog::backdrop{background:rgba(10,12,10,.45)}
     <div class="m-top">
       <button class="m-back" id="mLeaveBtn" type="button" aria-label="대기실로 나가기">‹ 대기실</button>
       <div class="m-title"><strong id="mRoomTitle"></strong><span class="mono" id="mRoomMeta"></span></div>
+      <button class="btn small danger" id="mRoomDeleteBtn" type="button" hidden>방 삭제</button>
       <span class="dot" id="mConnDot" aria-hidden="true"></span>
     </div>
     <div class="roomview">
@@ -294,7 +297,10 @@ dialog::backdrop{background:rgba(10,12,10,.45)}
               <div class="label">방</div>
               <h2 id="roomTitle" style="font-size:20px;overflow:hidden;text-overflow:ellipsis"></h2>
             </div>
-            <button class="btn small" id="leaveRoomBtn">대기실로 나가기</button>
+            <div style="display:flex;gap:6px;flex-wrap:wrap;justify-content:flex-end">
+              <button class="btn small danger" id="roomDeleteBtn" type="button" hidden>방 삭제</button>
+              <button class="btn small" id="leaveRoomBtn">대기실로 나가기</button>
+            </div>
           </div>
         </div>
         <div class="box chan-box">
@@ -434,7 +440,7 @@ dialog::backdrop{background:rgba(10,12,10,.45)}
     const nick = store.get('wt.nick');
     if (nick) {
       const r = await hello(nick);
-      if (r.ok) { if (S.wasInRoom) toast(r.room ? '다시 연결됐어요. 원래 채널로 돌아왔어요.' : '연결이 오래 끊겨 방에서 나왔어요. 다시 들어가 주세요.'); S.wasInRoom = false; return; }
+      if (r.ok) { if (r.room) toast(`‘${r.room.name}’ 방으로 돌아왔어요.`); else if (S.wasInRoom) toast('방이 없어져 대기실로 나왔어요.'); S.wasInRoom = false; return; }
       $('entryErr').textContent = r.error || '';
     }
     $('nickInput').value = nick || '';
@@ -488,6 +494,24 @@ dialog::backdrop{background:rgba(10,12,10,.45)}
   });
   socket.on('toast', toast);
 
+  // ---------- 방 삭제(방장) ----------
+  const armed = new WeakMap();
+  async function deleteRoom(r, btn) {
+    if (!armed.get(btn)) {
+      armed.set(btn, true); const t = btn.textContent; btn.textContent = '한 번 더 누르면 삭제';
+      setTimeout(() => { armed.delete(btn); btn.textContent = t; }, 3000); return;
+    }
+    armed.delete(btn);
+    const res = await emitAck('room:delete', { roomId: r.id });
+    if (!res.ok) toast(res.error);
+  }
+  socket.on('room:deleted', ({ roomId, reason }) => {
+    if (S.room?.id !== roomId) return;
+    stopTalking(true); S.room = null; renderLobby(); show('viewLobby');
+    toast(reason === 'owner' ? '방장이 방을 삭제했어요.' : '오래 비어 있던 방이 정리됐어요.');
+  });
+  for (const id of ['roomDeleteBtn', 'mRoomDeleteBtn']) $(id).addEventListener('click', (e) => S.room && deleteRoom(S.room, e.currentTarget));
+
   $('entryForm').addEventListener('submit', async (e) => {
     e.preventDefault();
     const nick = $('nickInput').value.trim();
@@ -522,7 +546,8 @@ dialog::backdrop{background:rgba(10,12,10,.45)}
       el('li', { class: 'room' },
         el('div', { class: 'info' },
           el('div', { class: 'name' }, r.name),
-          el('div', { class: 'meta' }, `방장 ${r.ownerNick} · ${r.count}명`, r.locked ? ' · 🔒 비밀번호' : '')),
+          el('div', { class: 'meta' }, `방장 ${r.ownerNick} · `, r.count ? `${r.count}명 접속` : '비어 있음', r.locked ? ' · 🔒 비밀번호' : '')),
+        r.ownerId === S.me?.id ? el('button', { class: 'btn small danger', onclick: (e) => deleteRoom(r, e.currentTarget) }, '삭제') : null,
         el('button', { class: 'btn small primary', onclick: () => joinRoom(r) }, S.room?.id === r.id ? '돌아가기' : '입장'))
     ) : [el('li', { class: 'empty' }, '열린 방이 없어요. 아래에서 첫 방을 만들어 보세요.')]));
   }
@@ -600,7 +625,11 @@ dialog::backdrop{background:rgba(10,12,10,.45)}
         talking ? el('span', { class: 'tag tx' }, '송신') : null,
         m.online === false ? el('span', { class: 'tag' }, '연결 끊김') : null,
         el('span', { class: 'where' }, ch ? ch.name : ''));
-    }));
+    }), ...(room.known || []).filter((k) => !k.here).map((k) =>
+      el('li', { class: 'person away' }, avatar(k), el('span', { class: 'nm' }, k.nick),
+        k.id === room.ownerId ? el('span', { class: 'tag' }, '방장') : null,
+        el('span', { class: 'where' }, '대기 모드·나감'))));
+    $('roomDeleteBtn').hidden = $('mRoomDeleteBtn').hidden = room.ownerId !== meId;
 
     // 휴대폰 상단바 + 채널 칩
     $('mRoomTitle').textContent = room.name;
@@ -655,9 +684,9 @@ dialog::backdrop{background:rgba(10,12,10,.45)}
     $('accAll').checked = !some; $('accSome').checked = !!some;
     const selected = new Set(c?.members || []);
     const owner = c ? c.createdBy : S.me.id;
-    $('pickList').replaceChildren(...room.members.map((m) =>
+    $('pickList').replaceChildren(...(room.known || room.members).map((m) =>
       el('label', {}, el('input', { type: 'checkbox', value: m.id, checked: m.id === owner || selected.has(m.id), disabled: m.id === owner }),
-        avatar(m), m.nick, m.id === S.me.id ? ' (나)' : '', m.id === owner && m.id !== S.me.id ? ' (만든 사람)' : '')));
+        avatar(m), m.nick, m.id === S.me.id ? ' (나)' : '', m.id === owner && m.id !== S.me.id ? ' (만든 사람)' : '', m.here === false ? ' · 대기 모드' : '')));
     $('pickList').hidden = !some;
     $('chanDlg').showModal(); $('chanName').focus();
   }

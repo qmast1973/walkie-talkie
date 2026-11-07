@@ -41,7 +41,8 @@ npm start          # http://localhost:3000
 - 브라우저는 **https 주소에서만 마이크를 허용**합니다(localhost 제외). Render, Railway, Fly.io 같은 Node.js 호스팅에 올리면 https가 자동으로 붙습니다.
   - Render 예: New → Web Service → 이 저장소 선택 → Build `npm install`, Start `npm start`
 - WebSocket을 쓰므로 GitHub Pages·Netlify 같은 정적 호스팅에서는 동작하지 않습니다.
-- 접속 정보는 서버 메모리에만 있어서, 서버가 재시작되면 방과 채널이 초기화됩니다.
+- 기본은 서버 메모리에만 저장해서, 서버가 재시작되면 방과 채널이 초기화됩니다.
+- **방 유지(선택)**: `DATABASE_URL` 환경변수에 Postgres 연결 주소(예: [Neon](https://neon.tech) 무료)를 넣으면 방·채널·접속자 자리가 DB에 저장되어, 서버가 잠들었다 깨어나도 방이 그대로 남습니다. 비워 두면 위의 메모리 방식으로 동작합니다.
 
 ## 구조
 - `server.js` — Express + Socket.IO. 사용자·방·채널·송신권 관리, 음성 프레임 중계

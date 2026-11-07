@@ -459,6 +459,117 @@ io.on('connection', (socket) => {
   });
 });
 
-server.listen(PORT, () => {
-  console.log(`무전기 서버 실행 중: http://localhost:${PORT}`);
+// ---- 저장(선택) ----
+// DATABASE_URL(Neon 등 Postgres 연결 주소)이 있으면 방·채널·접속자 자리를 DB에 저장하고,
+// 서버가 재시작되면 다시 불러옴. 없으면 지금까지처럼 메모리에서만 동작.
+let pool = null;
+let lastSig = '';
+let saveQueue = Promise.resolve();
+let saveTimer = null;
+
+function snapshot() {
+  const people = new Map();
+  for (const g of ghosts.values()) {
+    people.set(g.id, { id: g.id, key: g.key, nick: g.nick, color: g.color, lastRoomId: g.lastRoomId, lastChannelId: g.lastChannelId });
+  }
+  // 지금 접속 중이거나 막 끊긴 사람도 '돌아오면 원래 방으로 복귀할 사람'으로 저장
+  for (const u of users.values()) {
+    people.set(u.id, { id: u.id, key: u.key, nick: u.nick, color: u.color, lastRoomId: u.roomId, lastChannelId: u.channelId });
+  }
+  return {
+    v: 1,
+    rooms: [...rooms.values()].map((r) => ({
+      id: r.id,
+      name: r.name,
+      ownerId: r.ownerId,
+      passHash: r.passHash,
+      createdAt: r.createdAt,
+      emptySince: r.emptySince,
+      known: [...r.known],
+      channels: [...r.channels.values()].map((c) => ({ id: c.id, name: c.name, createdBy: c.createdBy, members: c.members, isDefault: c.isDefault })),
+    })),
+    people: [...people.values()],
+  };
+}
+
+function restore(data) {
+  if (!data || data.v !== 1) return;
+  const now = Date.now();
+  for (const r of data.rooms || []) {
+    const channels = new Map();
+    for (const c of r.channels || []) {
+      channels.set(c.id, { id: c.id, name: c.name, createdBy: c.createdBy, members: c.members ?? null, isDefault: !!c.isDefault, talker: null, talkStarted: 0 });
+    }
+    if (!channels.size) continue;
+    rooms.set(r.id, {
+      id: r.id,
+      name: r.name,
+      ownerId: r.ownerId,
+      passHash: r.passHash ?? null,
+      channels,
+      known: new Map(r.known || []),
+      emptySince: r.emptySince ?? now, // 재시작 직후엔 아무도 없으니 빈 방 시계를 시작
+      createdAt: r.createdAt || now,
+    });
+  }
+  for (const p of data.people || []) {
+    ghosts.set(p.id, { id: p.id, key: p.key, nick: p.nick, color: p.color, lastRoomId: p.lastRoomId, lastChannelId: p.lastChannelId, at: now });
+    keys.set(p.key, p.id);
+  }
+}
+
+function saveState(force = false) {
+  saveQueue = saveQueue.then(async () => {
+    if (!pool) return;
+    try {
+      const json = JSON.stringify(snapshot());
+      if (!force && json === lastSig) return;
+      await pool.query(
+        'INSERT INTO walkie_state (id, data, updated_at) VALUES (1, $1::jsonb, now()) ON CONFLICT (id) DO UPDATE SET data = EXCLUDED.data, updated_at = now()',
+        [json]
+      );
+      lastSig = json;
+    } catch (e) {
+      console.error('저장 실패(서버는 계속 동작):', e.message);
+    }
+  });
+  return saveQueue;
+}
+
+async function initStorage() {
+  if (!process.env.DATABASE_URL) {
+    console.log('DATABASE_URL 없음 → 메모리 방식으로 동작(서버가 재시작되면 방이 사라짐)');
+    return;
+  }
+  try {
+    const { Pool } = require('pg');
+    pool = new Pool({ connectionString: process.env.DATABASE_URL, max: 2, idleTimeoutMillis: 30_000, connectionTimeoutMillis: 15_000 });
+    // Neon은 한가하면 잠들면서 연결을 끊음 → 에러 이벤트를 받아 주지 않으면 서버가 죽음
+    pool.on('error', (e) => console.error('DB 연결 오류(자동 재연결):', e.message));
+    await pool.query('CREATE TABLE IF NOT EXISTS walkie_state (id INT PRIMARY KEY, data JSONB NOT NULL, updated_at TIMESTAMPTZ NOT NULL DEFAULT now())');
+    const { rows } = await pool.query('SELECT data FROM walkie_state WHERE id = 1');
+    if (rows[0]) restore(rows[0].data);
+    lastSig = JSON.stringify(snapshot());
+    console.log(`DB 연결됨: 방 ${rooms.size}개, 자리 ${ghosts.size}명 복원`);
+    saveTimer = setInterval(() => saveState(), 5_000);
+  } catch (e) {
+    console.error('DB 연결 실패 → 메모리 방식으로 동작:', e.message);
+    try { await pool?.end(); } catch {}
+    pool = null;
+  }
+}
+
+async function shutdown() {
+  clearInterval(saveTimer);
+  // 서버가 꺼지기 직전에 마지막으로 한 번 저장(최대 4초 대기)
+  await Promise.race([saveState(true), new Promise((r) => setTimeout(r, 4_000))]);
+  process.exit(0);
+}
+process.on('SIGTERM', shutdown);
+process.on('SIGINT', shutdown);
+
+initStorage().finally(() => {
+  server.listen(PORT, () => {
+    console.log(`무전기 서버 실행 중: http://localhost:${PORT}`);
+  });
 });

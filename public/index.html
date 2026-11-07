@@ -501,8 +501,9 @@ dialog::backdrop{background:rgba(10,12,10,.45)}
   socket.on('lobby', (l) => { S.lobby = l; renderLobby(); });
 
   function renderLobby() {
-    const users = S.lobby.users;
-    $('userCount').textContent = `${users.length}명 접속`;
+    // 대기실 명단에는 지금 접속 중인 사람만(방에 있다가 잠깐 끊긴 사람은 방 이름과 함께 표시)
+    const users = S.lobby.users.filter((u) => u.online !== false || u.roomId);
+    $('userCount').textContent = `${users.filter((u) => u.online !== false).length}명 접속`;
     $('roomCount').textContent = `${S.lobby.rooms.length}개`;
     const waiting = users.filter((u) => !u.roomId);
     const inRooms = users.filter((u) => u.roomId);
@@ -849,6 +850,10 @@ dialog::backdrop{background:rgba(10,12,10,.45)}
     if (outcome === 'accepted') $('installBox').hidden = true;
   });
   $('installClose').addEventListener('click', () => { $('installBox').hidden = true; store.set('wt.installDismissed', '1'); });
+
+  // 화면(탭·앱)을 닫으면 바로 연결을 끊어 명단에 이름이 남지 않게 함. 뒤로가기 캐시에서 돌아오면 다시 연결
+  window.addEventListener('pagehide', () => { stopTalking(); socket.disconnect(); });
+  window.addEventListener('pageshow', (e) => { if (e.persisted && !socket.connected) socket.connect(); });
 
   let wakeLock = null;
   async function requestWakeLock() { try { wakeLock = await navigator.wakeLock?.request('screen'); } catch {} }

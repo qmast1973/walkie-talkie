@@ -12,7 +12,8 @@ const PORT = process.env.PORT || 3000;
 const MAX_TALK_MS = 60_000; // 한 번에 최대 60초 송신
 const MAX_CHANNELS = 12;
 const MAX_ROOMS = 200;
-const GRACE_MS = 45_000; // 연결이 끊겨도 이 시간 동안은 방·채널 자리를 유지
+const GRACE_MS = 45_000; // 방에 있던 사람: 연결이 끊겨도 이 시간 동안은 방·채널 자리를 유지
+const LOBBY_GRACE_MS = 10_000; // 대기실에만 있던 사람: 금방 명단에서 정리
 
 // 지금 돌고 있는 코드 버전(커밋). Render는 RENDER_GIT_COMMIT을 넣어 줌
 const VERSION = (() => {
@@ -410,7 +411,7 @@ io.on('connection', (socket) => {
       users.delete(u.id);
       keys.delete(u.key);
       broadcastLobby();
-    }, GRACE_MS);
+    }, u.roomId ? GRACE_MS : LOBBY_GRACE_MS);
   });
 });
 

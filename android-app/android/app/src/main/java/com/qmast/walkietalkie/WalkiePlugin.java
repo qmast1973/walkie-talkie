@@ -28,18 +28,23 @@ public class WalkiePlugin extends Plugin {
     @Override
     public void load() {
         sBridge = getBridge();
+        // 페이지를 불러오기 전에 window.WalkieNative 를 붙여 둠
+        getBridge().getWebView().addJavascriptInterface(new WalkieJs(getActivity()), "WalkieNative");
+    }
+
+    /** 웹 화면에 이벤트 전달(Capacitor 스크립트 없이도 동작) */
+    private static void dispatch(String js) {
+        Bridge b = sBridge;
+        if (b == null) return;
+        b.getActivity().runOnUiThread(() -> b.getWebView().evaluateJavascript(js, null));
     }
 
     static void emitPtt(boolean down) {
-        Bridge b = sBridge;
-        if (b == null) return;
-        b.getActivity().runOnUiThread(() -> b.triggerWindowJSEvent("walkieptt", "{\"down\":" + down + "}"));
+        dispatch("(function(){var e=new Event('walkieptt');e.down=" + down + ";window.dispatchEvent(e);})()");
     }
 
     static void emitToggle() {
-        Bridge b = sBridge;
-        if (b == null) return;
-        b.getActivity().runOnUiThread(() -> b.triggerWindowJSEvent("walkiepttToggle"));
+        dispatch("window.dispatchEvent(new Event('walkiepttToggle'))");
     }
 
     /** 방 입장 여부와 알림에 보일 문구 갱신 */

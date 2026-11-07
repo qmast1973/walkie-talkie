@@ -402,8 +402,18 @@ a.btn{text-decoration:none;display:inline-block;text-align:center}
   'use strict';
   const $ = (id) => document.getElementById(id);
   const socket = io({ transports: ['websocket', 'polling'] });
-  const NATIVE = !!(window.Capacitor && (window.Capacitor.isNativePlatform?.() || window.Capacitor.getPlatform?.() === 'android'));
-  const nativeCall = (method, opts = {}) => { try { return Promise.resolve(window.Capacitor.nativePromise('Walkie', method, opts)).catch(() => {}); } catch { return Promise.resolve(); } };
+  // 안드로이드 앱 안: window.WalkieNative(기본 연결) 우선, 없으면 Capacitor 연결 사용
+  const NATIVE = !!(window.WalkieNative || (window.Capacitor && (window.Capacitor.isNativePlatform?.() || window.Capacitor.getPlatform?.() === 'android')));
+  const nativeCall = (method, opts = {}) => {
+    try {
+      if (window.WalkieNative) {
+        if (method === 'setStatus') window.WalkieNative.setStatus(!!opts.inRoom, String(opts.text || ''));
+        else if (typeof window.WalkieNative[method] === 'function') window.WalkieNative[method]();
+        return Promise.resolve();
+      }
+      return Promise.resolve(window.Capacitor.nativePromise('Walkie', method, opts)).catch(() => {});
+    } catch { return Promise.resolve(); }
+  };
   let lastNative = '';
 
   const S = { me: null, lobby: { users: [], rooms: [] }, room: null, talking: false, rxFrom: null };
@@ -464,7 +474,9 @@ a.btn{text-decoration:none;display:inline-block;text-align:center}
     const r = await emitAck('hello', { nick, key: ss.get('wt.key') });
     if (!r.ok) return r;
     ss.set('wt.key', r.key);
-    $('verText').textContent = r.version ? `서버 버전 ${r.version}` : '';
+    let appInfo = '';
+    try { if (window.WalkieNative) appInfo = ` · 안드로이드 앱 연결됨 ${window.WalkieNative.version()}`; else if (NATIVE) appInfo = ' · 안드로이드 앱'; } catch {}
+    $('verText').textContent = (r.version ? `서버 버전 ${r.version}` : '') + appInfo;
     S.me = r.me; S.lobby = r.lobby;
     renderMe();
     if (r.room) enterRoom(r.room); else { S.room = null; renderLobby(); show('viewLobby'); }

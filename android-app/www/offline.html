@@ -21,7 +21,7 @@ body{margin:0;padding-top:var(--sa-top);background:var(--bg);color:var(--ink);fo
 body::before{content:"";position:fixed;inset:0 0 auto;height:var(--sa-top);background:var(--bg);z-index:30}
 [hidden]{display:none!important}
 button,input{font:inherit;color:inherit}
-.wrap{padding:10px 16px calc(240px + var(--sa-bottom))}
+.wrap{padding:10px 16px calc(280px + var(--sa-bottom))}
 .top{display:flex;align-items:center;gap:10px;margin-bottom:10px}
 .top h1{font-size:18px;margin:0;flex:1;min-width:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .top .btn{padding:7px 11px;font-size:14px;white-space:nowrap}
@@ -59,8 +59,11 @@ button,input{font:inherit;color:inherit}
 .ptt.down{transform:translateY(5px);box-shadow:0 1px 0 #7a3c0f}
 .ptt.tx{background:var(--tx);color:#fff}
 .ptt:disabled{filter:grayscale(.7) brightness(.7)}
+.vol{display:flex;align-items:center;gap:10px;font-size:13px;margin-top:10px}
+.vol input{flex:1;accent-color:var(--ptt)}
+.vol span:last-child{min-width:3.5em;text-align:right;font-variant-numeric:tabular-nums}
 .hint{text-align:center;font-size:12px;opacity:.65;margin-top:8px}
-.toast{position:fixed;left:50%;bottom:calc(250px + var(--sa-bottom));transform:translateX(-50%);background:var(--ink);color:var(--bg);padding:10px 16px;border-radius:10px;font-size:14px;max-width:calc(100vw - 32px);z-index:40}
+.toast{position:fixed;left:50%;bottom:calc(290px + var(--sa-bottom));transform:translateX(-50%);background:var(--ink);color:var(--bg);padding:10px 16px;border-radius:10px;font-size:14px;max-width:calc(100vw - 32px);z-index:40}
 </style>
 </head>
 <body>
@@ -109,6 +112,7 @@ button,input{font:inherit;color:inherit}
 
 <div class="dock">
   <button class="ptt" id="ptt" type="button" disabled><span>PTT<small id="pttSub">시작을 눌러 주세요</small></span></button>
+  <div class="vol"><span>소리 키우기</span><input type="range" id="boost" min="0" max="2400" step="100" value="1200" aria-label="수신 소리 키우기"><span id="boostTxt">+12dB</span></div>
   <div class="hint">버튼이나 볼륨(-)을 누르고 있는 동안 송신돼요</div>
 </div>
 <div class="toast" id="toast" hidden></div>
@@ -153,7 +157,7 @@ button,input{font:inherit;color:inherit}
     if (!checkEnv()) { N && N.offRequestPerms(); return; }
     if (state.active) { N.offStop(); store.set('off.auto', '0'); return; }
     store.set('off.nick', nick()); store.set('off.team', team()); store.set('off.auto', '1');
-    N.offStart(nick(), team(), channel);
+    N.offStart(nick(), team(), channel); applyBoost();
   });
   for (const id of ['nick', 'team']) $(id).addEventListener('change', () => {
     store.set('off.' + id, $(id).value.trim());
@@ -211,6 +215,12 @@ button,input{font:inherit;color:inherit}
     $('others').hidden = !s.otherGroups;
     $('others').textContent = s.otherGroups ? `다른 팀 ${s.otherGroups}명도 근처에 있어요(소리는 안 들려요).` : '';
   }
+
+  // 소리 키우기(기기에 기억)
+  { const v = store.get('off.boost'); if (v !== null && v !== '') $('boost').value = v; }
+  const applyBoost = () => { const v = Number($('boost').value); $('boostTxt').textContent = '+' + Math.round(v / 100) + 'dB'; try { N && N.offBoost && N.offBoost(v); } catch {} };
+  $('boost').addEventListener('input', () => { store.set('off.boost', $('boost').value); applyBoost(); });
+  applyBoost();
 
   renderChips(); render();
   if (checkEnv() && store.get('off.auto') === '1' && $('team').value.trim()) N.offStart(nick(), team(), channel);

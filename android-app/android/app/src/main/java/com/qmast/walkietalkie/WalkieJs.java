@@ -101,6 +101,12 @@ public class WalkieJs {
         WalkieService.start(act.getApplicationContext(), "대기실");
     }
 
+    /** 오프라인 수신 소리 증폭(0~2400 mB) */
+    @JavascriptInterface
+    public void offBoost(int mb) {
+        OfflineEngine.get(act).setBoost(mb);
+    }
+
     @JavascriptInterface
     public boolean offPtt(boolean on) {
         return OfflineEngine.get(act).setTalking(on);

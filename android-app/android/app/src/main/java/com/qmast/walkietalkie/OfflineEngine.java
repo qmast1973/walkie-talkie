@@ -8,6 +8,7 @@ import android.media.AudioRecord;
 import android.media.AudioTrack;
 import android.media.MediaRecorder;
 import android.media.ToneGenerator;
+import android.media.audiofx.LoudnessEnhancer;
 import android.os.Handler;
 import android.os.Looper;
 
@@ -90,6 +91,9 @@ public class OfflineEngine {
     private final BlockingQueue<short[]> playQ = new ArrayBlockingQueue<>(100);
     private Thread playThread, recThread;
     private ToneGenerator tones;
+    private LoudnessEnhancer booster;
+    /** 소리 키우기(mB, 100 = 1dB). 기본 +12dB, 최대 +24dB */
+    private int boostMb = 1200;
     private String rxUuid = null;
     private long rxAt = 0;
 
@@ -342,6 +346,12 @@ public class OfflineEngine {
                 .setTransferMode(AudioTrack.MODE_STREAM)
                 .build();
         track.play();
+        // 시끄러운 현장용 소리 증폭(안드로이드 내장 라우드니스 증폭기)
+        try {
+            booster = new LoudnessEnhancer(track.getAudioSessionId());
+            booster.setTargetGain(boostMb);
+            booster.setEnabled(true);
+        } catch (Exception e) { booster = null; }
         playThread = new Thread(() -> {
             while (active) {
                 try {
@@ -392,7 +402,15 @@ public class OfflineEngine {
         if (rec != null) { try { rec.stop(); rec.release(); } catch (Exception ignored) {} }
     }
 
+    /** 음량 증폭 설정: percent 100(증폭 없음)~400(약 +12dB 추가) → 기본 증폭 위에 더함 */
+    public synchronized void setBoost(int mb) {
+        boostMb = Math.max(0, Math.min(2400, mb));
+        try { if (booster != null) booster.setTargetGain(boostMb); } catch (Exception ignored) {}
+    }
+
     private void stopAudio() {
+        try { if (booster != null) { booster.setEnabled(false); booster.release(); } } catch (Exception ignored) {}
+        booster = null;
         try { if (track != null) { track.stop(); track.release(); } } catch (Exception ignored) {}
         track = null;
         playQ.clear();

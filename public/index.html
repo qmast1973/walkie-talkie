@@ -361,7 +361,7 @@ a.btn{text-decoration:none;display:inline-block;text-align:center}
             <span>PTT<small id="pttSub">마이크 켜기</small></span>
           </button>
         </div>
-        <div class="dev-row"><span class="led" id="led"></span><span>음량</span><input type="range" id="vol" min="0" max="2" step="0.05" value="1" aria-label="수신 음량"></div>
+        <div class="dev-row"><span class="led" id="led"></span><span>음량</span><input type="range" id="vol" min="0" max="4" step="0.1" value="2" aria-label="수신 음량"><span class="mono" id="volPct" style="min-width:3.5em;text-align:right">200%</span></div>
         <div class="hint" id="pttHint">버튼을 누르고 있는 동안 송신돼요 · 키보드는 스페이스바</div>
         </div>
       </aside>
@@ -779,9 +779,16 @@ a.btn{text-decoration:none;display:inline-block;text-align:center}
     if (!audio.ctx) {
       const AC = window.AudioContext || window.webkitAudioContext;
       audio.ctx = new AC();
-      audio.gain = audio.ctx.createGain();
+      // 시끄러운 현장용: 음량(최대 400%) → 압축기(작은 소리 키우고 큰 소리 누름) → 보정 → 리미터(찢어짐 방지)
+      const ctx = audio.ctx;
+      audio.gain = ctx.createGain();
       audio.gain.gain.value = Number($('vol').value);
-      audio.gain.connect(audio.ctx.destination);
+      const comp = ctx.createDynamicsCompressor();
+      comp.threshold.value = -30; comp.knee.value = 10; comp.ratio.value = 8; comp.attack.value = 0.003; comp.release.value = 0.2;
+      const makeup = ctx.createGain(); makeup.gain.value = 2.2;
+      const limiter = ctx.createDynamicsCompressor();
+      limiter.threshold.value = -2; limiter.knee.value = 0; limiter.ratio.value = 20; limiter.attack.value = 0.001; limiter.release.value = 0.05;
+      audio.gain.connect(comp); comp.connect(makeup); makeup.connect(limiter); limiter.connect(ctx.destination);
     }
     if (audio.ctx.state === 'suspended') await audio.ctx.resume().catch(() => {});
   }
@@ -959,7 +966,11 @@ a.btn{text-decoration:none;display:inline-block;text-align:center}
     clearTimeout(meterDecay); meterDecay = setTimeout(() => meterBars.forEach((b) => b.classList.remove('lit')), 250);
   }
 
-  $('vol').addEventListener('input', () => { if (audio.gain) audio.gain.gain.value = Number($('vol').value); });
+  // 음량: 기기에 기억(기본 200%)
+  { const v = Number(store.get('wt.vol')); if (v > 0 && v <= 4) $('vol').value = v; }
+  const showVol = () => { $('volPct').textContent = Math.round(Number($('vol').value) * 100) + '%'; };
+  showVol();
+  $('vol').addEventListener('input', () => { if (audio.gain) audio.gain.gain.value = Number($('vol').value); store.set('wt.vol', $('vol').value); showVol(); });
 
   // ---------- PTT ----------
   let pressing = false, startPending = false;

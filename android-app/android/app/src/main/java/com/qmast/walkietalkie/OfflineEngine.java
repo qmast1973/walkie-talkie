@@ -8,7 +8,6 @@ import android.media.AudioRecord;
 import android.media.AudioTrack;
 import android.media.MediaRecorder;
 import android.media.ToneGenerator;
-import android.media.audiofx.LoudnessEnhancer;
 import android.os.Handler;
 import android.os.Looper;
 
@@ -96,7 +95,6 @@ public class OfflineEngine {
     private final BlockingQueue<short[]> playQ = new ArrayBlockingQueue<>(100);
     private Thread playThread, recThread;
     private ToneGenerator tones;
-    private LoudnessEnhancer booster;
     /** 소리 키우기(mB, 100 = 1dB). 기본 +12dB, 최대 +24dB */
     private int boostMb = 1200;
     private String rxUuid = null;
@@ -405,17 +403,12 @@ public class OfflineEngine {
                 .build();
         track.play();
         SpeakerRoute.get(ctx).apply();
-        // 시끄러운 현장용 소리 증폭(안드로이드 내장 라우드니스 증폭기)
-        try {
-            booster = new LoudnessEnhancer(track.getAudioSessionId());
-            booster.setTargetGain(boostMb);
-            booster.setEnabled(true);
-        } catch (Exception e) { booster = null; }
+        // 소리 키우기는 재생 직전 louden()에서 처리(유튜브 수준 평균 크기 + 부드러운 리미터)
         playThread = new Thread(() -> {
             while (active) {
                 try {
                     short[] s = playQ.poll(500, TimeUnit.MILLISECONDS);
-                    if (s != null && track != null) track.write(s, 0, s.length);
+                    if (s != null && track != null) { louden(s); track.write(s, 0, s.length); }
                 } catch (Exception ignored) {}
             }
         }, "walkie-play");
@@ -476,15 +469,31 @@ public class OfflineEngine {
         if (rec != null) { try { rec.stop(); rec.release(); } catch (Exception ignored) {} }
     }
 
-    /** 음량 증폭 설정: percent 100(증폭 없음)~400(약 +12dB 추가) → 기본 증폭 위에 더함 */
+    /** 소리 키우기(화면 슬라이더, mB): +6dB = 유튜브 수준, 기본 +12dB(2배), 최대 +24dB */
     public synchronized void setBoost(int mb) {
         boostMb = Math.max(0, Math.min(2400, mb));
-        try { if (booster != null) booster.setTargetGain(boostMb); } catch (Exception ignored) {}
+    }
+
+    /** 받는 쪽 소리 키우기: 말소리 평균 크기를 유튜브 수준(약 -10dBFS)에 맞추고 tanh 리미터로 찢어짐 방지, 말 사이 잡음은 키우지 않음 */
+    private float rxGain = 4f;
+    private void louden(short[] s) {
+        double sum = 0;
+        for (short v : s) { double x = v / 32768.0; sum += x * x; }
+        double rms = Math.sqrt(sum / Math.max(1, s.length));
+        if (rms > 0.004) {
+            float want = (float) Math.min(20, 0.30 / rms);
+            rxGain = want < rxGain ? rxGain * 0.5f + want * 0.5f : rxGain * 0.9f + want * 0.1f;
+        }
+        double vol = Math.pow(10, (boostMb - 600) / 2000.0);
+        double gate = rms < 0.006 ? rms / 0.006 : 1;
+        double k = 1.3 * rxGain * vol;
+        for (int i = 0; i < s.length; i++) {
+            double y = 0.97 * Math.tanh(k * (s[i] / 32768.0)) * gate;
+            s[i] = (short) Math.round(y * 32767);
+        }
     }
 
     private void stopAudio() {
-        try { if (booster != null) { booster.setEnabled(false); booster.release(); } } catch (Exception ignored) {}
-        booster = null;
         try { if (track != null) { track.stop(); track.release(); } } catch (Exception ignored) {}
         track = null;
         playQ.clear();

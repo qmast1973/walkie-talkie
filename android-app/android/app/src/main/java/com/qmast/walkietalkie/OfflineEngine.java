@@ -424,6 +424,8 @@ public class OfflineEngine {
         recThread.start();
     }
 
+    private float agc = 2f;
+
     private void recordLoop() {
         AudioRecord rec = null;
         short[] buf = new short[FRAME];
@@ -450,8 +452,17 @@ public class OfflineEngine {
                     n += r;
                 }
                 if (n <= 0) continue;
+                // 보내는 쪽 자동 음량: 말소리 크기를 일정하게 크게(최대 8배), 큰 소리는 바로 줄여 찢어짐 방지
+                int peak = 1;
+                for (int i = 0; i < n; i++) peak = Math.max(peak, Math.abs((int) buf[i]));
+                float want = peak > 300 ? Math.min(8f, 26000f / peak) : agc;
+                agc = want < agc ? want : agc * 0.7f + want * 0.3f;
                 byte[] mu = new byte[n];
-                for (int i = 0; i < n; i++) mu[i] = linearToUlaw(buf[i]);
+                for (int i = 0; i < n; i++) {
+                    int v = Math.round(buf[i] * agc);
+                    if (v > 32767) v = 32767; else if (v < -32768) v = -32768;
+                    mu[i] = linearToUlaw((short) v);
+                }
                 JSONObject h = header();
                 h.put("s", seq++);
                 broadcast(T_AUDIO, h.toString(), mu);

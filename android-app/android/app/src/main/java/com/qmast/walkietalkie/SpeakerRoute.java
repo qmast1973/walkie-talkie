@@ -56,6 +56,8 @@ public class SpeakerRoute {
     public void apply() {
         if (am == null) return;
         try {
+            // 통화 모드에서는 소리가 '통화 볼륨'(스피커에서 작음)을 따라가므로 항상 일반(미디어) 모드로 되돌림
+            if (am.getMode() != AudioManager.MODE_NORMAL) am.setMode(AudioManager.MODE_NORMAL);
             boolean headset = headsetConnected();
             if (Build.VERSION.SDK_INT >= 31) {
                 if (headset) {

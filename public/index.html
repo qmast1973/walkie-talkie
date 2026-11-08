@@ -885,8 +885,16 @@ a.btn{text-decoration:none;display:inline-block;text-align:center}
 
   // 입력 샘플레이트 → 16kHz 다운샘플(구간 평균) → Opus 압축 또는 Int16
   let sendBuf = new Int16Array(640), sendN = 0;
+  let txAgc = 2;
   function onMicChunk(f32) {
     if (!S.talking) { audio.carry = new Float32Array(0); audio.pos = 0; return; }
+    // 보내는 쪽 자동 음량: 말소리를 일정하게 크게(최대 6배), 큰 소리는 바로 줄여 찢어짐 방지
+    { let pk = 0; for (let i = 0; i < f32.length; i++) pk = Math.max(pk, Math.abs(f32[i]));
+      const want = pk > 0.01 ? Math.min(6, 0.8 / pk) : txAgc;
+      txAgc = want < txAgc ? want : txAgc * 0.85 + want * 0.15;
+      const g = new Float32Array(f32.length);
+      for (let i = 0; i < f32.length; i++) g[i] = Math.max(-1, Math.min(1, f32[i] * txAgc));
+      f32 = g; }
     const ratio = audio.ctx.sampleRate / RATE;
     const inp = new Float32Array(audio.carry.length + f32.length);
     inp.set(audio.carry); inp.set(f32, audio.carry.length);

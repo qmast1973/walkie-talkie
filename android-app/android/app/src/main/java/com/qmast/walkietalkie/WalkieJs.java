@@ -81,6 +81,24 @@ public class WalkieJs {
         }
     }
 
+    /** 위치(GPS) 켜짐 여부: 근처 기기 찾기에 필요 */
+    @JavascriptInterface
+    public boolean locationEnabled() {
+        try {
+            android.location.LocationManager lm = (android.location.LocationManager) act.getSystemService(Context.LOCATION_SERVICE);
+            if (lm == null) return true;
+            if (android.os.Build.VERSION.SDK_INT >= 28) return lm.isLocationEnabled();
+            return lm.isProviderEnabled(android.location.LocationManager.GPS_PROVIDER) || lm.isProviderEnabled(android.location.LocationManager.NETWORK_PROVIDER);
+        } catch (Exception e) {
+            return true;
+        }
+    }
+
+    @JavascriptInterface
+    public void offRescan() {
+        OfflineEngine.get(act).restartNearby();
+    }
+
     @JavascriptInterface
     public void offStart(String nick, String group, int channel) {
         OfflineEngine.get(act).start(nick, group, channel);

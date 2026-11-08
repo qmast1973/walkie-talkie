@@ -14,7 +14,9 @@ import android.os.Looper;
 
 import androidx.annotation.NonNull;
 
+import com.google.android.gms.common.api.ApiException;
 import com.google.android.gms.nearby.Nearby;
+import com.google.android.gms.nearby.connection.ConnectionsStatusCodes;
 import com.google.android.gms.nearby.connection.AdvertisingOptions;
 import com.google.android.gms.nearby.connection.ConnectionInfo;
 import com.google.android.gms.nearby.connection.ConnectionLifecycleCallback;
@@ -86,6 +88,9 @@ public class OfflineEngine {
         @Override protected boolean removeEldestEntry(Map.Entry<Long, Boolean> e) { return size() > 3000; }
     };
     private int seq = 0;
+    // 진단용(화면에 표시): 알리기·찾기 상태, 발견 수, 최근 오류
+    private String advState = "-", discState = "-", lastError = "";
+    private int attempts = 0;
 
     private AudioTrack track;
     private final BlockingQueue<short[]> playQ = new ArrayBlockingQueue<>(100);
@@ -125,15 +130,41 @@ public class OfflineEngine {
         active = true;
         status = "주변 기기를 찾는 중…";
         startAudio();
+        startNearby();
+        main.post(ticker);
+        push();
+    }
+
+    private void startNearby() {
+        advState = "시작 중"; discState = "시작 중";
         String name = "WT|" + myUuid;
         AdvertisingOptions ao = new AdvertisingOptions.Builder().setStrategy(Strategy.P2P_CLUSTER).build();
         client.startAdvertising(name, SERVICE_ID, lifecycle, ao)
-                .addOnFailureListener(e -> { status = "알리기 실패: 블루투스·위치를 켜 주세요"; push(); });
+                .addOnSuccessListener(v -> { advState = "켜짐"; push(); })
+                .addOnFailureListener(e -> { advState = "실패 " + code(e); status = "알리기 실패: 블루투스·위치를 켜 주세요"; lastError = "알리기 " + code(e); push(); });
         DiscoveryOptions dopt = new DiscoveryOptions.Builder().setStrategy(Strategy.P2P_CLUSTER).build();
         client.startDiscovery(SERVICE_ID, discovery, dopt)
-                .addOnFailureListener(e -> { status = "찾기 실패: 블루투스·위치를 켜 주세요"; push(); });
-        main.post(ticker);
+                .addOnSuccessListener(v -> { discState = "켜짐"; push(); })
+                .addOnFailureListener(e -> { discState = "실패 " + code(e); status = "찾기 실패: 블루투스·위치를 켜 주세요"; lastError = "찾기 " + code(e); push(); });
+    }
+
+    /** 다시 찾기: 알리기·찾기를 껐다 켬(화면의 '다시 찾기') */
+    public synchronized void restartNearby() {
+        if (!active) return;
+        try { client.stopAdvertising(); client.stopDiscovery(); } catch (Exception ignored) {}
+        discovered.clear();
+        lastError = "";
+        main.postDelayed(this::startNearby, 500);
         push();
+    }
+
+    /** Nearby 오류 코드를 사람이 읽을 수 있게 */
+    private static String code(Exception e) {
+        if (e instanceof ApiException) {
+            int c = ((ApiException) e).getStatusCode();
+            return ConnectionsStatusCodes.getStatusCodeString(c) + "(" + c + ")";
+        }
+        return e.getClass().getSimpleName();
     }
 
     public synchronized void stop() {
@@ -142,7 +173,8 @@ public class OfflineEngine {
         talking = false;
         main.removeCallbacks(ticker);
         try { client.stopAdvertising(); client.stopDiscovery(); client.stopAllEndpoints(); } catch (Exception ignored) {}
-        endpoints.clear(); discovered.clear(); peers.clear();
+        endpoints.clear(); discovered.clear(); peers.clear(); pending.clear();
+        advState = "-"; discState = "-"; lastError = ""; attempts = 0;
         stopAudio();
         status = "";
         push();
@@ -185,21 +217,39 @@ public class OfflineEngine {
             if (n == null || !n.startsWith("WT|")) return;
             String uuid = n.substring(3);
             synchronized (OfflineEngine.this) { discovered.put(id, uuid); }
+            push();
             maybeConnect(id, uuid, 0);
         }
         @Override public void onEndpointLost(@NonNull String id) {
             synchronized (OfflineEngine.this) { discovered.remove(id); }
+            push();
         }
     };
 
-    /** 둘이 동시에 연결을 요청하지 않도록 id가 작은 쪽만 요청 */
+    private final Set<String> pending = new HashSet<>();
+
+    /** 둘이 동시에 요청해 충돌하지 않도록 id가 작은 쪽이 먼저, 큰 쪽은 4초 뒤에도 연결이 안 됐을 때 요청 */
     private void maybeConnect(String id, String uuid, int attempt) {
-        if (!active || endpoints.contains(id) || myUuid.compareTo(uuid) > 0) return;
-        client.requestConnection("WT|" + myUuid, id, lifecycle).addOnFailureListener(e -> {
-            if (attempt < 5) main.postDelayed(() -> {
-                synchronized (OfflineEngine.this) { if (discovered.containsKey(id)) maybeConnect(id, uuid, attempt + 1); }
-            }, 2000L * (attempt + 1));
-        });
+        if (!active || endpoints.contains(id) || pending.contains(id)) return;
+        long delay = myUuid.compareTo(uuid) < 0 ? 0 : 4000;
+        if (attempt > 0) delay = 2000L * attempt;
+        main.postDelayed(() -> {
+            synchronized (OfflineEngine.this) {
+                if (!active || endpoints.contains(id) || pending.contains(id) || !discovered.containsKey(id)) return;
+                pending.add(id);
+                attempts++;
+            }
+            client.requestConnection("WT|" + myUuid, id, lifecycle)
+                    .addOnSuccessListener(v -> push())
+                    .addOnFailureListener(e -> {
+                        synchronized (OfflineEngine.this) { pending.remove(id); }
+                        int c = e instanceof ApiException ? ((ApiException) e).getStatusCode() : -1;
+                        if (c == ConnectionsStatusCodes.STATUS_ALREADY_CONNECTED_TO_ENDPOINT) return;
+                        lastError = "연결 " + code(e);
+                        push();
+                        if (attempt < 6) maybeConnect(id, uuid, attempt + 1);
+                    });
+        }, delay);
     }
 
     private final ConnectionLifecycleCallback lifecycle = new ConnectionLifecycleCallback() {
@@ -209,15 +259,23 @@ public class OfflineEngine {
             else client.rejectConnection(id);
         }
         @Override public void onConnectionResult(@NonNull String id, @NonNull ConnectionResolution r) {
+            synchronized (OfflineEngine.this) { pending.remove(id); }
             if (r.getStatus().isSuccess()) {
-                synchronized (OfflineEngine.this) { endpoints.add(id); status = ""; }
+                synchronized (OfflineEngine.this) { endpoints.add(id); status = ""; lastError = ""; }
                 sendPresence();
+                push();
+            } else {
+                lastError = "연결 거절/실패 " + ConnectionsStatusCodes.getStatusCodeString(r.getStatus().getStatusCode()) + "(" + r.getStatus().getStatusCode() + ")";
                 push();
             }
         }
         @Override public void onDisconnected(@NonNull String id) {
-            synchronized (OfflineEngine.this) { endpoints.remove(id); }
+            synchronized (OfflineEngine.this) { endpoints.remove(id); pending.remove(id); }
             push();
+            // 아직 보이면 다시 연결
+            String uuid;
+            synchronized (OfflineEngine.this) { uuid = discovered.get(id); }
+            if (uuid != null) maybeConnect(id, uuid, 1);
         }
     };
 
@@ -431,6 +489,8 @@ public class OfflineEngine {
             JSONObject s = new JSONObject();
             s.put("active", active).put("talking", talking).put("status", status);
             s.put("connected", endpoints.size());
+            s.put("diag", new JSONObject().put("adv", advState).put("disc", discState).put("found", discovered.size())
+                    .put("attempts", attempts).put("error", lastError).put("id", myUuid));
             s.put("me", new JSONObject().put("nick", nick).put("group", group).put("channel", channel));
             JSONArray arr = new JSONArray();
             int others = 0;

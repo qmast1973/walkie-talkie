@@ -82,12 +82,25 @@ button,input{font:inherit;color:inherit}
     <p class="muted" style="margin:0 0 10px">인터넷 없이 블루투스·와이파이 다이렉트로 근처 동료 폰과 직접 연결해요. 권한 창에서 모두 ‘허용’을 눌러 주세요.</p>
     <button class="btn primary wide" id="permBtn" type="button">권한 허용</button>
   </div>
-  <div class="box warn" id="btBox" hidden>블루투스가 꺼져 있어요. 빠른 설정에서 <b>블루투스</b>와 <b>위치</b>를 켜 주세요.</div>
+  <div class="box warn" id="btBox" hidden>블루투스가 꺼져 있어요. 화면 위에서 아래로 내려 빠른 설정의 <b>블루투스</b>를 켜 주세요.</div>
+  <div class="box warn" id="locBox" hidden>위치가 꺼져 있어요. 근처 폰을 찾으려면 빠른 설정의 <b>위치</b>를 켜 주세요.</div>
 
   <div class="lcd" aria-live="polite">
     <div class="r"><span id="lcdTeam">-</span><span id="lcdMode">STBY</span></div>
     <div class="ch" id="lcdCh">CH 1</div>
     <div class="st" id="lcdState">시작 전</div>
+  </div>
+
+  <div class="box" id="diagBox" hidden>
+    <h2>연결 상태 <button class="btn" id="rescanBtn" type="button" style="float:right;padding:4px 10px;font-size:13px">다시 찾기</button></h2>
+    <table style="width:100%;font-size:13px;border-collapse:collapse">
+      <tr><td class="muted">내 기기 알리기</td><td id="dAdv">-</td></tr>
+      <tr><td class="muted">주변 찾기</td><td id="dDisc">-</td></tr>
+      <tr><td class="muted">발견한 무전기 앱</td><td id="dFound">-</td></tr>
+      <tr><td class="muted">연결 시도</td><td id="dTry">-</td></tr>
+      <tr><td class="muted">최근 오류</td><td id="dErr">없음</td></tr>
+    </table>
+    <p class="muted" style="margin:6px 0 0">안 되면 이 화면을 캡처해서 보내 주세요. <span id="dId"></span></p>
   </div>
 
   <div class="box">
@@ -148,6 +161,7 @@ button,input{font:inherit;color:inherit}
     const perm = N.offPermsOk();
     $('permBox').hidden = perm;
     $('btBox').hidden = !perm || N.btEnabled();
+    $('locBox').hidden = !perm || !N.locationEnabled || N.locationEnabled();
     return perm;
   }
 
@@ -165,6 +179,7 @@ button,input{font:inherit;color:inherit}
     if (state.active) N.offSet(nick(), team(), channel);
   });
 
+  $('rescanBtn').addEventListener('click', () => { try { N.offRescan(); checkEnv(); } catch {} });
   $('onlineBtn').addEventListener('click', () => { if (N) N.openOnline(); else location.href = 'https://walkie-talkie-1zpg.onrender.com'; });
 
   // 송신 버튼
@@ -197,6 +212,13 @@ button,input{font:inherit;color:inherit}
     $('lcdTeam').textContent = s.active ? team() : '-';
     $('lcdCh').textContent = 'CH ' + channel;
     $('lcdMode').textContent = s.talking ? 'TX' : s.rx ? 'RX' : 'STBY';
+    const d = s.diag || {};
+    $('diagBox').hidden = !s.active;
+    $('dAdv').textContent = d.adv || '-'; $('dDisc').textContent = d.disc || '-';
+    $('dFound').textContent = (d.found ?? 0) + '대';
+    $('dTry').textContent = (d.attempts ?? 0) + '번';
+    $('dErr').textContent = d.error || '없음';
+    $('dId').textContent = d.id ? `(기기 ${d.id})` : '';
     $('lcdState').textContent = !s.active ? '시작 전' : s.status ? s.status : s.talking ? '송신 중…' : s.rx ? `◀ ${s.rx}` : (s.connected ? '대기 중' : '주변 기기를 찾는 중…');
     ptt.disabled = !s.active || (!!s.rx && !s.talking);
     ptt.classList.toggle('tx', !!s.talking);

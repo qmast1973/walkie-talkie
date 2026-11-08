@@ -1,0 +1,221 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<meta name="theme-color" content="#2b2f2c">
+<title>오프라인 무전</title>
+<style>
+/* 인터넷 없이 쓰는 화면: 위는 설정·주변 사람, 아래는 송신 버튼(고정). 글꼴은 기기 기본 글꼴만 사용 */
+:root{
+  --sa-top:max(env(safe-area-inset-top,0px),var(--safe-area-inset-top,0px));
+  --sa-bottom:max(env(safe-area-inset-bottom,0px),var(--safe-area-inset-bottom,0px));
+  --bg:#e7e9e4;--panel:#f6f7f3;--ink:#1d221f;--muted:#5e665f;--line:#cfd4cb;
+  --device:#2b2f2c;--device-ink:#e9ece6;--lcd:#d9c27a;--lcd-ink:#2a2410;
+  --ptt:#e2711d;--tx:#d8343a;--ok:#2f8a57;--accent:#3b6e5a;
+}
+@media (prefers-color-scheme:dark){:root{--bg:#141714;--panel:#1d211d;--ink:#e6e9e3;--muted:#9aa39a;--line:#2f352f;--device:#0d0f0d;--accent:#7fb89f;color-scheme:dark}}
+*{box-sizing:border-box}
+html,body{height:100%}
+body{margin:0;padding-top:var(--sa-top);background:var(--bg);color:var(--ink);font:15px/1.5 system-ui,-apple-system,"Samsung Sans","Noto Sans KR",sans-serif;-webkit-tap-highlight-color:transparent}
+body::before{content:"";position:fixed;inset:0 0 auto;height:var(--sa-top);background:var(--bg);z-index:30}
+[hidden]{display:none!important}
+button,input{font:inherit;color:inherit}
+.wrap{padding:10px 16px calc(240px + var(--sa-bottom))}
+.top{display:flex;align-items:center;gap:10px;margin-bottom:10px}
+.top h1{font-size:18px;margin:0;flex:1;min-width:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.top .btn{padding:7px 11px;font-size:14px;white-space:nowrap}
+.pill{font-size:12px;padding:3px 9px;border-radius:999px;border:1px solid var(--line);color:var(--muted);white-space:nowrap}
+.pill.on{border-color:var(--ok);color:var(--ok)}
+.btn{border:1px solid var(--line);background:var(--panel);border-radius:10px;padding:9px 14px;font-weight:600}
+.btn.primary{background:var(--ink);color:var(--bg);border-color:var(--ink)}
+.btn.wide{width:100%;padding:13px}
+.box{background:var(--panel);border:1px solid var(--line);border-radius:14px;padding:14px;margin-bottom:12px}
+.box h2{font-size:15px;margin:0 0 8px}
+.label{font-size:12px;color:var(--muted);letter-spacing:.04em}
+.input{width:100%;border:1px solid var(--line);background:var(--bg);border-radius:10px;padding:10px 12px;font-size:16px}
+.row{display:grid;grid-template-columns:1fr 1fr;gap:8px}
+.chips{display:grid;grid-template-columns:repeat(8,minmax(0,1fr));gap:5px;margin-top:6px}
+.chip{min-width:0;padding:10px 0;border-radius:10px;border:1px solid var(--line);background:var(--bg);font-weight:700;font-variant-numeric:tabular-nums}
+.chip.on{background:var(--lcd);color:var(--lcd-ink);border-color:var(--lcd)}
+.warn{background:#fff4d6;color:#5a4300;border-color:#e8d293}
+@media (prefers-color-scheme:dark){.warn{background:#3a3015;color:#f0dfa8;border-color:#5c4c1e}}
+.people{list-style:none;margin:0;padding:0}
+.people li{display:flex;align-items:center;gap:8px;padding:7px 2px;border-bottom:1px solid var(--line)}
+.people li:last-child{border-bottom:0}
+.people .nm{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.tag{font-size:11px;padding:1px 7px;border-radius:999px;border:1px solid var(--line);color:var(--muted)}
+.tag.tx{background:var(--tx);border-color:var(--tx);color:#fff}
+.muted{color:var(--muted);font-size:13px}
+.lcd{background:var(--lcd);color:var(--lcd-ink);border-radius:10px;padding:10px 12px;font-family:ui-monospace,monospace;display:grid;gap:2px;margin-bottom:12px}
+.lcd .r{display:flex;justify-content:space-between;font-size:12px;font-weight:700}
+.lcd .ch{font-size:26px;font-weight:700}
+.lcd .st{font-family:system-ui,sans-serif;font-weight:700;font-size:14px;min-height:20px}
+.dock{position:fixed;left:0;right:0;bottom:0;z-index:20;background:var(--device);color:var(--device-ink);border-radius:22px 22px 0 0;
+  padding:14px 16px calc(12px + var(--sa-bottom));box-shadow:0 -10px 30px -12px rgba(0,0,0,.5)}
+.ptt{width:100%;height:150px;border:0;border-radius:24px;background:var(--ptt);color:#1b1206;font-weight:800;font-size:26px;
+  box-shadow:0 6px 0 #7a3c0f;touch-action:none;user-select:none;-webkit-user-select:none;-webkit-touch-callout:none}
+.ptt small{display:block;font-size:14px;font-weight:600;opacity:.8}
+.ptt.down{transform:translateY(5px);box-shadow:0 1px 0 #7a3c0f}
+.ptt.tx{background:var(--tx);color:#fff}
+.ptt:disabled{filter:grayscale(.7) brightness(.7)}
+.hint{text-align:center;font-size:12px;opacity:.65;margin-top:8px}
+.toast{position:fixed;left:50%;bottom:calc(250px + var(--sa-bottom));transform:translateX(-50%);background:var(--ink);color:var(--bg);padding:10px 16px;border-radius:10px;font-size:14px;max-width:calc(100vw - 32px);z-index:40}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <div class="top">
+    <h1>오프라인 무전</h1>
+    <span class="pill" id="conn">연결 0대</span>
+    <button class="btn" id="onlineBtn" type="button">온라인으로</button>
+  </div>
+
+  <div class="box warn" id="notApp" hidden>이 화면은 ‘모두의 무전기’ 안드로이드 앱에서만 쓸 수 있어요.</div>
+
+  <div class="box warn" id="permBox" hidden>
+    <h2>근처 기기 찾기 권한이 필요해요</h2>
+    <p class="muted" style="margin:0 0 10px">인터넷 없이 블루투스·와이파이 다이렉트로 근처 동료 폰과 직접 연결해요. 권한 창에서 모두 ‘허용’을 눌러 주세요.</p>
+    <button class="btn primary wide" id="permBtn" type="button">권한 허용</button>
+  </div>
+  <div class="box warn" id="btBox" hidden>블루투스가 꺼져 있어요. 빠른 설정에서 <b>블루투스</b>와 <b>위치</b>를 켜 주세요.</div>
+
+  <div class="lcd" aria-live="polite">
+    <div class="r"><span id="lcdTeam">-</span><span id="lcdMode">STBY</span></div>
+    <div class="ch" id="lcdCh">CH 1</div>
+    <div class="st" id="lcdState">시작 전</div>
+  </div>
+
+  <div class="box">
+    <div class="row">
+      <div><label class="label" for="nick">내 이름</label><input class="input" id="nick" maxlength="16" placeholder="예: 승진"></div>
+      <div><label class="label" for="team">팀 이름</label><input class="input" id="team" maxlength="16" placeholder="예: 현장1팀"></div>
+    </div>
+    <div style="margin-top:10px"><span class="label">채널 (같은 팀·같은 채널끼리 들려요)</span>
+      <div class="chips" id="chips"></div>
+    </div>
+    <div style="margin-top:12px"><button class="btn primary wide" id="startBtn" type="button">오프라인 무전 시작</button></div>
+  </div>
+
+  <div class="box">
+    <h2>근처 동료 <span class="muted" id="peerCount"></span></h2>
+    <ul class="people" id="people"></ul>
+    <p class="muted" id="peopleEmpty" style="margin:4px 0 0">시작하면 근처에서 같은 팀 이름을 쓰는 사람이 여기에 나와요.</p>
+    <p class="muted" id="others" hidden></p>
+  </div>
+
+  <p class="muted">팁: 근처 폰끼리 직접 연결되고, 중간에 있는 폰이 소리를 이어서 전달해요. 같은 층·가까운 거리에서 가장 잘 돼요.</p>
+</div>
+
+<div class="dock">
+  <button class="ptt" id="ptt" type="button" disabled><span>PTT<small id="pttSub">시작을 눌러 주세요</small></span></button>
+  <div class="hint">버튼이나 볼륨(-)을 누르고 있는 동안 송신돼요</div>
+</div>
+<div class="toast" id="toast" hidden></div>
+
+<script>
+(() => {
+  'use strict';
+  const $ = (id) => document.getElementById(id);
+  const N = window.WalkieNative;
+  const store = { get: (k) => { try { return localStorage.getItem(k); } catch { return null; } }, set: (k, v) => { try { localStorage.setItem(k, v); } catch {} } };
+  let state = { active: false, connected: 0, peers: [], talking: false, rx: null, status: '' };
+  let channel = Number(store.get('off.ch')) || 1;
+  let tt;
+  const toast = (m) => { const t = $('toast'); t.textContent = m; t.hidden = false; clearTimeout(tt); tt = setTimeout(() => (t.hidden = true), 2600); };
+
+  $('nick').value = store.get('off.nick') || store.get('wt.nick') || '';
+  $('team').value = store.get('off.team') || '';
+
+  // 채널 1~8
+  for (let i = 1; i <= 8; i++) {
+    const b = document.createElement('button');
+    b.type = 'button'; b.className = 'chip'; b.textContent = i; b.dataset.ch = i;
+    b.addEventListener('click', () => { channel = i; store.set('off.ch', i); renderChips(); if (state.active) N.offSet(nick(), team(), channel); render(); });
+    $('chips').append(b);
+  }
+  function renderChips() { for (const b of $('chips').children) b.classList.toggle('on', Number(b.dataset.ch) === channel); }
+  const nick = () => $('nick').value.trim() || '이름없음';
+  const team = () => $('team').value.trim() || '우리팀';
+
+  function checkEnv() {
+    if (!N) { $('notApp').hidden = false; $('startBtn').disabled = true; return false; }
+    const perm = N.offPermsOk();
+    $('permBox').hidden = perm;
+    $('btBox').hidden = !perm || N.btEnabled();
+    return perm;
+  }
+
+  $('permBtn').addEventListener('click', () => N && N.offRequestPerms());
+  window.offPerms = (ok) => { checkEnv(); if (ok) toast('권한이 허용됐어요. 시작을 눌러 주세요.'); else toast('권한이 없으면 오프라인 무전을 쓸 수 없어요.'); };
+
+  $('startBtn').addEventListener('click', () => {
+    if (!checkEnv()) { N && N.offRequestPerms(); return; }
+    if (state.active) { N.offStop(); store.set('off.auto', '0'); return; }
+    store.set('off.nick', nick()); store.set('off.team', team()); store.set('off.auto', '1');
+    N.offStart(nick(), team(), channel);
+  });
+  for (const id of ['nick', 'team']) $(id).addEventListener('change', () => {
+    store.set('off.' + id, $(id).value.trim());
+    if (state.active) N.offSet(nick(), team(), channel);
+  });
+
+  $('onlineBtn').addEventListener('click', () => { if (N) N.openOnline(); else location.href = 'https://walkie-talkie-1zpg.onrender.com'; });
+
+  // 송신 버튼
+  const ptt = $('ptt');
+  let down = false;
+  function press(on) {
+    if (!N || !state.active) return;
+    if (on && !down) {
+      down = true; ptt.classList.add('down');
+      if (!N.offPtt(true)) { down = false; ptt.classList.remove('down'); toast(state.rx ? `${state.rx} 님이 말하는 중이에요.` : '지금은 송신할 수 없어요.'); }
+    } else if (!on && down) {
+      down = false; ptt.classList.remove('down'); N.offPtt(false);
+    }
+  }
+  ptt.addEventListener('pointerdown', (e) => { e.preventDefault(); ptt.setPointerCapture?.(e.pointerId); press(true); });
+  ptt.addEventListener('pointerup', () => press(false));
+  ptt.addEventListener('pointercancel', () => press(false));
+  ptt.addEventListener('lostpointercapture', () => press(false));
+  ptt.addEventListener('contextmenu', (e) => e.preventDefault());
+
+  // 안드로이드에서 상태가 올 때마다 화면 갱신
+  window.offState = (s) => { state = s; render(); };
+
+  function render() {
+    renderChips();
+    const s = state;
+    $('conn').textContent = `연결 ${s.connected || 0}대`;
+    $('conn').classList.toggle('on', (s.connected || 0) > 0);
+    $('startBtn').textContent = s.active ? '오프라인 무전 끄기' : '오프라인 무전 시작';
+    $('lcdTeam').textContent = s.active ? team() : '-';
+    $('lcdCh').textContent = 'CH ' + channel;
+    $('lcdMode').textContent = s.talking ? 'TX' : s.rx ? 'RX' : 'STBY';
+    $('lcdState').textContent = !s.active ? '시작 전' : s.status ? s.status : s.talking ? '송신 중…' : s.rx ? `◀ ${s.rx}` : (s.connected ? '대기 중' : '주변 기기를 찾는 중…');
+    ptt.disabled = !s.active || (!!s.rx && !s.talking);
+    ptt.classList.toggle('tx', !!s.talking);
+    $('pttSub').textContent = !s.active ? '시작을 눌러 주세요' : s.talking ? '말하는 중' : s.rx ? '수신 중' : '누르고 말하기';
+    const list = (s.peers || []).slice().sort((a, b) => (b.channel === channel) - (a.channel === channel));
+    $('people').replaceChildren(...list.map((p) => {
+      const li = document.createElement('li');
+      const nm = document.createElement('span'); nm.className = 'nm'; nm.textContent = p.nick || '이름없음';
+      const ch = document.createElement('span'); ch.className = 'tag'; ch.textContent = 'CH ' + p.channel;
+      li.append(nm);
+      if (p.talking) { const t = document.createElement('span'); t.className = 'tag tx'; t.textContent = '송신'; li.append(t); }
+      li.append(ch);
+      return li;
+    }));
+    $('peerCount').textContent = list.length ? `${list.length}명` : '';
+    $('peopleEmpty').hidden = list.length > 0;
+    $('others').hidden = !s.otherGroups;
+    $('others').textContent = s.otherGroups ? `다른 팀 ${s.otherGroups}명도 근처에 있어요(소리는 안 들려요).` : '';
+  }
+
+  renderChips(); render();
+  if (checkEnv() && store.get('off.auto') === '1' && $('team').value.trim()) N.offStart(nick(), team(), channel);
+  document.addEventListener('visibilitychange', () => { if (!document.hidden) checkEnv(); });
+})();
+</script>
+</body>
+</html>

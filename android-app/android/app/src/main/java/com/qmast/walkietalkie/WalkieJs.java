@@ -1,19 +1,25 @@
 package com.qmast.walkietalkie;
 
-import android.app.Activity;
+import android.bluetooth.BluetoothAdapter;
+import android.bluetooth.BluetoothManager;
+import android.content.Context;
 import android.webkit.JavascriptInterface;
 
 /**
  * 웹 화면에서 바로 부르는 안드로이드 기능(window.WalkieNative).
- * Capacitor 연결 스크립트가 붙지 않는 경우에도 동작하도록 안드로이드 기본 방식으로 연결.
+ * 온라인 화면(서버)과 오프라인 화면(앱 안의 offline.html) 모두에서 사용.
  */
 public class WalkieJs {
-    private final Activity act;
+    static final String ONLINE_URL = "https://walkie-talkie-1zpg.onrender.com";
+    static final String OFFLINE_URL = "https://localhost/offline.html";
 
-    WalkieJs(Activity act) {
+    private final MainActivity act;
+
+    WalkieJs(MainActivity act) {
         this.act = act;
     }
 
+    // ---------- 공통 ----------
     /** 방 입장 여부(볼륨 버튼 송신 켜기/끄기)와 알림 문구 */
     @JavascriptInterface
     public void setStatus(boolean inRoom, String text) {
@@ -38,5 +44,65 @@ public class WalkieJs {
         } catch (Exception e) {
             return "";
         }
+    }
+
+    // ---------- 화면 전환 ----------
+    @JavascriptInterface
+    public void openOffline() {
+        act.runOnUiThread(() -> act.getBridge().getWebView().loadUrl(OFFLINE_URL));
+    }
+
+    @JavascriptInterface
+    public void openOnline() {
+        OfflineEngine.get(act).stop();
+        WalkiePlugin.pttKeyEnabled = false;
+        act.runOnUiThread(() -> act.getBridge().getWebView().loadUrl(ONLINE_URL));
+    }
+
+    // ---------- 오프라인 무전 ----------
+    @JavascriptInterface
+    public boolean offPermsOk() {
+        return act.offlinePermsGranted();
+    }
+
+    @JavascriptInterface
+    public void offRequestPerms() {
+        act.runOnUiThread(act::requestOfflinePerms);
+    }
+
+    @JavascriptInterface
+    public boolean btEnabled() {
+        try {
+            BluetoothManager bm = (BluetoothManager) act.getSystemService(Context.BLUETOOTH_SERVICE);
+            BluetoothAdapter a = bm == null ? null : bm.getAdapter();
+            return a != null && a.isEnabled();
+        } catch (Exception e) {
+            return true;
+        }
+    }
+
+    @JavascriptInterface
+    public void offStart(String nick, String group, int channel) {
+        OfflineEngine.get(act).start(nick, group, channel);
+        WalkiePlugin.pttKeyEnabled = true;
+        WalkieService.start(act.getApplicationContext(), "오프라인 · " + group + " · CH " + channel);
+    }
+
+    @JavascriptInterface
+    public void offSet(String nick, String group, int channel) {
+        OfflineEngine.get(act).set(nick, group, channel);
+        WalkieService.start(act.getApplicationContext(), "오프라인 · " + group + " · CH " + channel);
+    }
+
+    @JavascriptInterface
+    public void offStop() {
+        OfflineEngine.get(act).stop();
+        WalkiePlugin.pttKeyEnabled = false;
+        WalkieService.start(act.getApplicationContext(), "대기실");
+    }
+
+    @JavascriptInterface
+    public boolean offPtt(boolean on) {
+        return OfflineEngine.get(act).setTalking(on);
     }
 }

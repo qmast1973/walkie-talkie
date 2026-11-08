@@ -29,7 +29,9 @@ public class WalkiePlugin extends Plugin {
     public void load() {
         sBridge = getBridge();
         // 페이지를 불러오기 전에 window.WalkieNative 를 붙여 둠
-        getBridge().getWebView().addJavascriptInterface(new WalkieJs(getActivity()), "WalkieNative");
+        if (getActivity() instanceof MainActivity) {
+            getBridge().getWebView().addJavascriptInterface(new WalkieJs((MainActivity) getActivity()), "WalkieNative");
+        }
     }
 
     /** 웹 화면에 이벤트 전달(Capacitor 스크립트 없이도 동작) */

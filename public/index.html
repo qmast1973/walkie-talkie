@@ -274,6 +274,13 @@ a.btn{text-decoration:none;display:inline-block;text-align:center}
       </div>
       <button class="btn primary small" id="batteryBtn" type="button">설정 열기</button>
     </div>
+    <div class="install" id="offlineBox" hidden>
+      <div class="install-text">
+        <strong>인터넷 없이 쓰기</strong>
+        <span>데이터·와이파이 없이 근처 동료 폰과 블루투스로 직접 무전해요.</span>
+      </div>
+      <button class="btn primary small" id="offlineBtn" type="button">오프라인 무전</button>
+    </div>
     <div class="mebar lobby-me">
       <span class="avatar me-avatar"></span>
       <span class="me-text"><span class="me-label">내 이름</span><strong class="me-nick"></strong></span>
@@ -1023,6 +1030,9 @@ a.btn{text-decoration:none;display:inline-block;text-align:center}
   }
   $('batteryBtn').addEventListener('click', () => { try { window.WalkieNative.openBatterySettings(); } catch {} });
   checkBattery();
+  // 오프라인 무전(앱 1.0.107 이상): 인터넷 없이 근처 폰끼리
+  try { if (window.WalkieNative && typeof window.WalkieNative.openOffline === 'function') $('offlineBox').hidden = false; } catch {}
+  $('offlineBtn').addEventListener('click', () => { try { window.WalkieNative.openOffline(); } catch {} });
   document.addEventListener('visibilitychange', () => { if (!document.hidden) checkBattery(); });
   window.addEventListener('walkieptt', (e) => { if (!S.room) return; if (e.down) startTalking(); else stopTalking(); });
   window.addEventListener('walkiepttToggle', () => { if (!S.room) return; if (S.talking || pressing) stopTalking(); else startTalking(); });

@@ -22,6 +22,7 @@ import java.util.List;
  */
 public class MainActivity extends BridgeActivity {
     private static final int REQ_PERMS = 1001;
+    private static final int REQ_OFFLINE = 1002;
     private boolean volDown = false;
 
     @Override
@@ -33,8 +34,40 @@ public class MainActivity extends BridgeActivity {
         // 백그라운드에서도 수신음이 재생되도록 '사용자 터치 후 재생' 제한 해제
         wv.getSettings().setMediaPlaybackRequiresUserGesture(false);
 
+        // window.WalkieNative: 온라인·오프라인 화면 공통 연결(페이지가 바뀌어도 유지)
+        wv.addJavascriptInterface(new WalkieJs(this), "WalkieNative");
+        // 오프라인 무전 상태를 화면(offline.html)에 전달
+        OfflineEngine.get(this).setListener(json -> runOnUiThread(() ->
+                getBridge().getWebView().evaluateJavascript("window.offState&&window.offState(" + json + ")", null)));
+
         requestNeededPermissions();
         WalkieService.start(this, null);
+    }
+
+    /** 오프라인 무전에 필요한 권한(근처 기기 찾기·블루투스·와이파이 다이렉트·위치) */
+    String[] offlinePerms() {
+        List<String> p = new ArrayList<>();
+        p.add(Manifest.permission.ACCESS_FINE_LOCATION);
+        p.add(Manifest.permission.ACCESS_COARSE_LOCATION);
+        p.add(Manifest.permission.RECORD_AUDIO);
+        if (Build.VERSION.SDK_INT >= 31) {
+            p.add(Manifest.permission.BLUETOOTH_SCAN);
+            p.add(Manifest.permission.BLUETOOTH_ADVERTISE);
+            p.add(Manifest.permission.BLUETOOTH_CONNECT);
+        }
+        if (Build.VERSION.SDK_INT >= 33) p.add(Manifest.permission.NEARBY_WIFI_DEVICES);
+        return p.toArray(new String[0]);
+    }
+
+    boolean offlinePermsGranted() {
+        for (String perm : offlinePerms()) {
+            if (ContextCompat.checkSelfPermission(this, perm) != PackageManager.PERMISSION_GRANTED) return false;
+        }
+        return true;
+    }
+
+    void requestOfflinePerms() {
+        ActivityCompat.requestPermissions(this, offlinePerms(), REQ_OFFLINE);
     }
 
     private void requestNeededPermissions() {
@@ -53,6 +86,11 @@ public class MainActivity extends BridgeActivity {
     @Override
     public void onRequestPermissionsResult(int requestCode, String[] permissions, int[] grantResults) {
         super.onRequestPermissionsResult(requestCode, permissions, grantResults);
+        if (requestCode == REQ_OFFLINE) {
+            boolean ok = offlinePermsGranted();
+            getBridge().getWebView().evaluateJavascript("window.offPerms&&window.offPerms(" + ok + ")", null);
+            WalkieService.start(this, null);
+        }
         if (requestCode == REQ_PERMS) {
             // 마이크 권한을 받았으면 서비스를 '마이크 사용' 형태로 다시 시작(화면 꺼진 상태 송신 대비)
             WalkieService.start(this, null);
@@ -85,12 +123,13 @@ public class MainActivity extends BridgeActivity {
     public boolean dispatchKeyEvent(KeyEvent event) {
         int code = event.getKeyCode();
         if (WalkiePlugin.pttKeyEnabled && code == KeyEvent.KEYCODE_VOLUME_DOWN) {
+            boolean off = OfflineEngine.isActive();
             if (event.getAction() == KeyEvent.ACTION_DOWN && !volDown) {
                 volDown = true;
-                WalkiePlugin.emitPtt(true);
+                if (off) OfflineEngine.get(this).setTalking(true); else WalkiePlugin.emitPtt(true);
             } else if (event.getAction() == KeyEvent.ACTION_UP) {
                 volDown = false;
-                WalkiePlugin.emitPtt(false);
+                if (off) OfflineEngine.get(this).setTalking(false); else WalkiePlugin.emitPtt(false);
             }
             return true; // 볼륨이 바뀌지 않게 소비
         }

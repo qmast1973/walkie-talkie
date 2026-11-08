@@ -82,7 +82,10 @@ public class WalkieService extends Service {
                         int c = ev.getKeyCode();
                         if (c == KeyEvent.KEYCODE_HEADSETHOOK || c == KeyEvent.KEYCODE_MEDIA_PLAY_PAUSE
                                 || c == KeyEvent.KEYCODE_MEDIA_PLAY || c == KeyEvent.KEYCODE_MEDIA_PAUSE) {
-                            if (WalkiePlugin.pttKeyEnabled) WalkiePlugin.emitToggle();
+                            if (OfflineEngine.isActive()) {
+                                OfflineEngine e = OfflineEngine.get(WalkieService.this);
+                                e.setTalking(!e.isTalking());
+                            } else if (WalkiePlugin.pttKeyEnabled) WalkiePlugin.emitToggle();
                             return true;
                         }
                     }
@@ -116,6 +119,8 @@ public class WalkieService extends Service {
             if (ContextCompat.checkSelfPermission(this, Manifest.permission.RECORD_AUDIO) == PackageManager.PERMISSION_GRANTED) {
                 types |= ServiceInfo.FOREGROUND_SERVICE_TYPE_MICROPHONE;
             }
+            // 오프라인 무전 중에는 근처 기기 연결(블루투스·와이파이 다이렉트) 유지
+            if (OfflineEngine.isActive() && Build.VERSION.SDK_INT >= 29) types |= ServiceInfo.FOREGROUND_SERVICE_TYPE_CONNECTED_DEVICE;
         }
         try {
             ServiceCompat.startForeground(this, NOTI_ID, n, types);

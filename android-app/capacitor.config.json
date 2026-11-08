@@ -5,7 +5,8 @@
   "server": {
     "url": "https://walkie-talkie-1zpg.onrender.com",
     "cleartext": false,
-    "androidScheme": "https"
+    "androidScheme": "https",
+    "errorPath": "offline.html"
   },
   "android": {
     "allowMixedContent": false,

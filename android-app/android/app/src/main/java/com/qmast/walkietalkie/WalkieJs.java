@@ -25,6 +25,8 @@ public class WalkieJs {
     public void setStatus(boolean inRoom, String text) {
         WalkiePlugin.pttKeyEnabled = inRoom;
         WalkieService.start(act.getApplicationContext(), text == null ? "대기실" : text);
+        // 송신 시작·끝마다 출력 경로 다시 확인(마이크를 켜면 수화기로 바뀌는 기기 대비)
+        act.runOnUiThread(() -> SpeakerRoute.get(act).apply());
     }
 
     @JavascriptInterface

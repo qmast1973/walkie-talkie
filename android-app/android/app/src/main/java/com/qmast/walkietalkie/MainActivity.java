@@ -42,6 +42,8 @@ public class MainActivity extends BridgeActivity {
 
         requestNeededPermissions();
         WalkieService.start(this, null);
+        // 이어폰이 없으면 바깥 스피커로(통화 수화기로 나오지 않게)
+        SpeakerRoute.get(this);
     }
 
     /** 오프라인 무전에 필요한 권한(근처 기기 찾기·블루투스·와이파이 다이렉트·위치) */

@@ -404,6 +404,7 @@ public class OfflineEngine {
                 .setTransferMode(AudioTrack.MODE_STREAM)
                 .build();
         track.play();
+        SpeakerRoute.get(ctx).apply();
         // 시끄러운 현장용 소리 증폭(안드로이드 내장 라우드니스 증폭기)
         try {
             booster = new LoudnessEnhancer(track.getAudioSessionId());
@@ -435,8 +436,12 @@ public class OfflineEngine {
                 }
                 if (rec == null) {
                     int min = AudioRecord.getMinBufferSize(RATE, AudioFormat.CHANNEL_IN_MONO, AudioFormat.ENCODING_PCM_16BIT);
-                    rec = new AudioRecord(MediaRecorder.AudioSource.VOICE_COMMUNICATION, RATE, AudioFormat.CHANNEL_IN_MONO, AudioFormat.ENCODING_PCM_16BIT, Math.max(min, FRAME * 4));
+                    // 통화 모드(수화기 출력)로 바뀌지 않도록 일반 마이크 사용 + 가능하면 잡음 제거·자동 음량
+                    rec = new AudioRecord(MediaRecorder.AudioSource.MIC, RATE, AudioFormat.CHANNEL_IN_MONO, AudioFormat.ENCODING_PCM_16BIT, Math.max(min, FRAME * 4));
+                    try { if (android.media.audiofx.NoiseSuppressor.isAvailable()) { android.media.audiofx.NoiseSuppressor ns = android.media.audiofx.NoiseSuppressor.create(rec.getAudioSessionId()); if (ns != null) ns.setEnabled(true); } } catch (Exception ignored) {}
+                    try { if (android.media.audiofx.AutomaticGainControl.isAvailable()) { android.media.audiofx.AutomaticGainControl agc = android.media.audiofx.AutomaticGainControl.create(rec.getAudioSessionId()); if (agc != null) agc.setEnabled(true); } } catch (Exception ignored) {}
                     rec.startRecording();
+                    main.post(() -> SpeakerRoute.get(ctx).apply());
                 }
                 int n = 0;
                 while (n < FRAME && talking) {

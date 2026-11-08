@@ -8,6 +8,7 @@ on:
     branches: [main]
     paths:
       - 'android-app/**'
+      - 'public/help.html'
       - '.github/workflows/android.yml'
   workflow_dispatch:
 
@@ -34,6 +35,10 @@ jobs:
 
       - name: Install Capacitor
         run: npm ci
+
+      # 인터넷 없이도 볼 수 있게 서버의 도움말을 앱 안에 함께 넣음
+      - name: Copy help page into app
+        run: cp ../public/help.html www/help.html
 
       - name: Sync web assets and plugins
         run: npx cap sync android

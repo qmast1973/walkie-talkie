@@ -1,0 +1,187 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<meta name="theme-color" content="#2b2f2c">
+<title>무전기 도움말</title>
+<style>
+/* 현장에서 빠르게 찾는 도움말: 위에 목차, 아래로 짧은 항목. 기기 기본 글꼴만 사용(오프라인에서도 열림) */
+:root{
+  --sa-top:max(env(safe-area-inset-top,0px),var(--safe-area-inset-top,0px));
+  --sa-bottom:max(env(safe-area-inset-bottom,0px),var(--safe-area-inset-bottom,0px));
+  --bg:#e7e9e4;--panel:#f6f7f3;--ink:#1d221f;--muted:#5e665f;--line:#cfd4cb;
+  --device:#2b2f2c;--device-ink:#e9ece6;--lcd:#d9c27a;--lcd-ink:#2a2410;--ptt:#e2711d;--accent:#3b6e5a;
+}
+@media (prefers-color-scheme:dark){:root{--bg:#141714;--panel:#1d211d;--ink:#e6e9e3;--muted:#9aa39a;--line:#2f352f;--device:#0d0f0d;--accent:#7fb89f;color-scheme:dark}}
+*{box-sizing:border-box}
+body{margin:0;padding-top:var(--sa-top);background:var(--bg);color:var(--ink);font:16px/1.65 system-ui,-apple-system,"Samsung Sans","Apple SD Gothic Neo","Noto Sans KR","Malgun Gothic",sans-serif}
+body::before{content:"";position:fixed;inset:0 0 auto;height:var(--sa-top);background:var(--device);z-index:30}
+.bar{position:sticky;top:var(--sa-top);z-index:20;background:var(--device);color:var(--device-ink);display:flex;align-items:center;gap:10px;
+  padding:10px max(16px,env(safe-area-inset-right,0px)) 10px max(16px,env(safe-area-inset-left,0px))}
+.bar h1{font-size:18px;margin:0;flex:1}
+.back{color:var(--device-ink);text-decoration:none;border:1px solid rgba(255,255,255,.3);border-radius:999px;padding:6px 14px;font-weight:600;font-size:14px;background:none;cursor:pointer}
+main{max-width:720px;margin:0 auto;padding:14px max(16px,env(safe-area-inset-right,0px)) calc(40px + var(--sa-bottom)) max(16px,env(safe-area-inset-left,0px))}
+.toc{display:grid;grid-template-columns:1fr 1fr;gap:8px;margin:4px 0 18px}
+.toc a{display:block;background:var(--panel);border:1px solid var(--line);border-radius:12px;padding:10px 12px;color:var(--ink);text-decoration:none;font-weight:600;font-size:15px}
+.toc a small{display:block;font-weight:400;color:var(--muted);font-size:12px}
+section{background:var(--panel);border:1px solid var(--line);border-radius:14px;padding:14px 16px;margin-bottom:14px;scroll-margin-top:calc(60px + var(--sa-top))}
+h2{font-size:18px;margin:0 0 8px;text-wrap:balance}
+h3{font-size:15px;margin:14px 0 4px}
+p{margin:6px 0}
+ol,ul{margin:6px 0;padding-left:1.3em}
+li{margin:3px 0}
+.key{display:inline-block;background:var(--lcd);color:var(--lcd-ink);border-radius:6px;padding:0 7px;font-weight:700;font-size:14px}
+.tip{background:var(--bg);border-left:4px solid var(--ptt);border-radius:6px;padding:8px 10px;margin:8px 0;font-size:15px}
+.q{font-weight:700;margin-top:12px}
+.muted{color:var(--muted);font-size:14px}
+table{border-collapse:collapse;width:100%;font-size:14px}
+td,th{border:1px solid var(--line);padding:6px 8px;text-align:left;vertical-align:top}
+@media (max-width:380px){.toc{grid-template-columns:1fr}}
+</style>
+</head>
+<body>
+<div class="bar">
+  <button class="back" id="back" type="button">‹ 돌아가기</button>
+  <h1>무전기 도움말</h1>
+</div>
+<main>
+  <nav class="toc" aria-label="목차">
+    <a href="#start">처음 설치<small>설치·권한·배터리</small></a>
+    <a href="#talk">무전하기<small>송신 버튼·볼륨(-)·이어폰</small></a>
+    <a href="#room">방과 채널<small>만들기·비밀 채널</small></a>
+    <a href="#owner">방장 기능<small>삭제·내보내기</small></a>
+    <a href="#offline">인터넷 없이<small>오프라인 무전</small></a>
+    <a href="#sound">소리 크게<small>시끄러운 현장</small></a>
+    <a href="#trouble">문제 해결<small>안 들릴 때·끊길 때</small></a>
+    <a href="#data">데이터 사용량<small>얼마나 쓰나요</small></a>
+  </nav>
+
+  <section id="start">
+    <h2>처음 설치</h2>
+    <ol>
+      <li>휴대폰 인터넷 창에서 아래 주소를 열어 앱을 받고 설치해요.<br><span class="muted">github.com/qmast1973/walkie-talkie/releases/latest/download/walkie-talkie.apk</span></li>
+      <li>‘출처를 알 수 없는 앱’ 경고가 나오면 <b>설정 → 이 출처 허용</b>을 켜고 설치해요.</li>
+      <li>앱을 처음 열면 <b>마이크</b>와 <b>알림</b>을 모두 허용해요.</li>
+      <li>닉네임을 정하고 <b>대기실 입장</b>을 눌러요. 같은 이름은 한 사람만 쓸 수 있어요.</li>
+    </ol>
+    <h3>화면이 꺼져도 들리게 (삼성 갤럭시)</h3>
+    <ol>
+      <li>앱 아이콘 길게 누르기 → <b>ⓘ 애플리케이션 정보 → 배터리 → 제한 없음</b></li>
+      <li><b>설정 → 배터리 → 백그라운드 사용 한도 → 절전 예외 앱</b>에 ‘모두의 무전기’ 추가</li>
+      <li>같은 화면의 <b>사용하지 않는 앱을 절전 상태로 전환</b>은 끄기</li>
+    </ol>
+    <div class="tip">위쪽 알림창에 <b>‘무전기 대기 중’</b>이 떠 있으면 화면이 꺼져도 무전이 들려요.</div>
+    <h3>업데이트</h3>
+    <p>대부분의 기능은 앱을 껐다 켜면 자동으로 바뀌어요. 새 앱을 받으라고 안내가 오면 위 주소로 다시 받아 그대로 설치(덮어쓰기)하면 돼요. 지울 필요 없어요.</p>
+  </section>
+
+  <section id="talk">
+    <h2>무전하기</h2>
+    <ul>
+      <li><b>화면 버튼</b>: 아래 큰 <span class="key">PTT</span> 버튼을 <b>누르고 있는 동안</b> 말해요. 손을 떼면 끝나요.</li>
+      <li><b>볼륨(-) 버튼</b>: 방 안에서 볼륨 아래 버튼을 누르고 있으면 송신돼요. 볼륨(+)은 원래대로 소리 크기 조절이에요.</li>
+      <li><b>블루투스 이어폰</b>: 재생 버튼을 한 번 누르면 송신 시작, 한 번 더 누르면 끝나요.</li>
+      <li><b>PC</b>: 스페이스바를 누르고 있으면 송신돼요.</li>
+    </ul>
+    <p>한 채널에서는 한 번에 한 사람만 말할 수 있어요. 누가 말하는 중이면 버튼이 잠기고 화면에 <b>◀ 이름</b>이 보여요. 한 번에 최대 60초까지 송신돼요.</p>
+    <p class="muted">화면 표시: <span class="key">TX</span> 내가 송신 중 · <span class="key">RX</span> 수신 중 · <span class="key">STBY</span> 대기</p>
+  </section>
+
+  <section id="room">
+    <h2>방과 채널</h2>
+    <h3>대기실</h3>
+    <p>접속한 사람 명단과 열린 방 목록이 보여요. 방 이름을 쓰고 <b>방 만들기</b>를 누르면 내가 방장이 돼요. 비밀번호를 넣으면 아는 사람만 들어올 수 있어요.</p>
+    <h3>채널</h3>
+    <ul>
+      <li>방에 들어오면 <b>01 공용</b> 채널로 시작해요. 같은 채널에 있는 사람끼리 들려요.</li>
+      <li>채널 버튼을 누르면 그 채널로 바뀌어요. 지금 쓰는 채널을 한 번 더 누르면 설정이 열려요.</li>
+      <li><b>+ 채널</b>로 새 채널을 만들어요. <b>선택한 인원만</b>을 고르면 체크한 사람만 듣고 말할 수 있어요(🔒 표시).</li>
+      <li>누가 말하고 있는 채널에는 빨간 점이 떠요.</li>
+    </ul>
+    <h3>잠깐 끊겨도 괜찮아요</h3>
+    <p>신호가 끊기거나 앱을 다시 열어도, 원래 방과 채널로 자동으로 돌아가요.</p>
+  </section>
+
+  <section id="owner">
+    <h2>방장 기능</h2>
+    <ul>
+      <li><b>방 삭제</b>: 방 화면 위쪽 또는 대기실 방 목록의 <b>삭제</b>를 두 번 눌러요. 안에 있던 사람은 대기실로 나가요.</li>
+      <li><b>내보내기</b>: 방 인원 목록에서 이름 옆 <b>내보내기</b>를 두 번 눌러요. 내보낸 사람은 자동으로 다시 들어오지 않아요.</li>
+      <li><b>방장 이어받기</b>: 방장이 1분 넘게 방에 없으면, 방에 있는 사람 중 먼저 들어온 사람이 방장이 돼요.</li>
+      <li>아무도 없는 방은 24시간 뒤 자동으로 지워져요.</li>
+    </ul>
+  </section>
+
+  <section id="offline">
+    <h2>인터넷 없이 (오프라인 무전)</h2>
+    <p>데이터나 와이파이가 없어도 근처 폰끼리 블루투스로 직접 무전해요.</p>
+    <ol>
+      <li>폰의 <b>블루투스</b>와 <b>위치</b>를 켜요.</li>
+      <li>대기실의 <b>오프라인 무전</b>을 눌러요. 인터넷이 안 되면 앱이 자동으로 이 화면을 열어요.</li>
+      <li>처음 한 번 <b>권한 허용</b>을 누르고 모두 허용해요.</li>
+      <li><b>내 이름</b>, <b>팀 이름</b>, <b>채널(1~8)</b>을 정하고 <b>오프라인 무전 시작</b>을 눌러요.</li>
+      <li>위쪽 <b>연결 N대</b>에 숫자가 올라가면 연결된 거예요. 처음엔 10~30초 걸릴 수 있어요.</li>
+    </ol>
+    <div class="tip">같은 <b>팀 이름</b>과 같은 <b>채널</b>을 고른 사람끼리만 들려요. 팀 이름은 띄어쓰기까지 똑같이 맞춰 주세요.</div>
+    <p>폰끼리 직접 닿는 거리는 같은 층에서 수십 m 정도예요. 중간에 있는 폰이 소리를 이어서 전달해 주니, 동료들이 흩어져 있으면 더 멀리까지 들려요. 오프라인 무전과 인터넷 무전은 서로 따로예요.</p>
+  </section>
+
+  <section id="sound">
+    <h2>소리 크게</h2>
+    <ol>
+      <li>폰의 <b>미디어 볼륨</b>을 최대로 올려요(앱 안에서 볼륨(+) 버튼).</li>
+      <li>인터넷 무전: 송신 버튼 아래 <b>음량</b>을 최대 <b>400%</b>까지 올릴 수 있어요.</li>
+      <li>오프라인 무전: 아래 <b>소리 키우기</b>를 최대 <b>+24dB</b>까지 올릴 수 있어요.</li>
+      <li>그래도 안 들리면 <b>블루투스 이어폰·넥밴드</b>를 써 보세요. 소음이 큰 곳에서는 훨씬 잘 들려요.</li>
+    </ol>
+  </section>
+
+  <section id="trouble">
+    <h2>문제 해결</h2>
+    <p class="q">소리가 안 들려요</p>
+    <ul>
+      <li>상대와 <b>같은 방·같은 채널</b>인지 확인해요(화면의 CH 번호).</li>
+      <li>미디어 볼륨과 앱 음량이 0이 아닌지 확인해요.</li>
+      <li>앱을 다시 열었다면 화면을 한 번 눌러 주세요(소리 켜기).</li>
+    </ul>
+    <p class="q">화면을 끄면 안 들려요</p>
+    <ul><li>위 <a href="#start">처음 설치</a>의 <b>배터리 ‘제한 없음’</b>과 <b>절전 예외</b>를 해 주세요. 대기실에 ‘대기 중 끊김 막기’ 안내가 뜨면 <b>설정 열기</b>를 누르세요.</li></ul>
+    <p class="q">송신 버튼이 안 눌려요</p>
+    <ul>
+      <li>다른 사람이 말하는 중이면 잠겨요. 끝나면 다시 눌러요.</li>
+      <li>처음 한 번은 버튼을 누르면 <b>마이크 켜기</b>만 돼요. 한 번 더 누르고 말해요.</li>
+    </ul>
+    <p class="q">‘다른 사람이 쓰고 있어요’라며 이름이 안 돼요</p>
+    <ul><li>같은 이름이 이미 접속 중이에요. PC나 다른 폰에 같은 이름으로 열어 둔 화면이 있으면 닫거나, 다른 이름을 써요.</li></ul>
+    <p class="q">명단에 나간 사람이 남아 있어요</p>
+    <ul><li>잠깐 끊긴 사람은 45초 동안 ‘연결 끊김’으로 보였다가 사라져요. PC는 무전기 탭을 새로고침(F5)해 주세요.</li></ul>
+    <p class="q">오프라인에서 연결이 0대예요</p>
+    <ul>
+      <li>블루투스와 위치가 켜져 있는지, 권한을 모두 허용했는지 확인해요.</li>
+      <li>상대도 <b>오프라인 무전 시작</b>을 눌렀는지 확인해요. 가까이(몇 m) 붙어서 먼저 연결해 보세요.</li>
+    </ul>
+    <p class="q">버전 확인</p>
+    <p>대기실 맨 아래에 <b>서버 버전</b>과 <b>안드로이드 앱 연결됨 1.0.○○○</b>이 보여요. 문의할 때 알려 주시면 빨라요.</p>
+  </section>
+
+  <section id="data">
+    <h2>데이터 사용량</h2>
+    <table>
+      <tr><th>상황</th><th>사용량</th></tr>
+      <tr><td>대기만 할 때</td><td>1시간에 0.1MB 이하</td></tr>
+      <tr><td>무전 1분 (말하기·듣기)</td><td>약 0.15MB</td></tr>
+      <tr><td>하루 30분 무전</td><td>약 5MB</td></tr>
+      <tr><td>오프라인 무전</td><td>0 (데이터 안 씀)</td></tr>
+    </table>
+    <p class="muted">와이파이에 연결돼 있으면 휴대폰 데이터는 쓰지 않아요.</p>
+  </section>
+</main>
+<script>
+// 돌아가기: 들어온 화면으로(없으면 대기실)
+const home = location.hostname === 'localhost' ? 'offline.html' : '/';
+const from = document.referrer && !document.referrer.includes('help.html') && new URL(document.referrer).origin === location.origin ? document.referrer : home;
+document.getElementById('back').addEventListener('click', () => { location.href = from; });
+</script>
+</body>
+</html>

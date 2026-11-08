@@ -486,7 +486,7 @@ a.btn{text-decoration:none;display:inline-block;text-align:center}
     show('viewEntry');
   });
   async function hello(nick) {
-    const r = await emitAck('hello', { nick, key: ss.get('wt.key') });
+    const r = await emitAck('hello', { nick, key: ss.get('wt.key'), caps: { opus: await opusReady } });
     if (!r.ok) return r;
     ss.set('wt.key', r.key);
     let appInfo = '';
@@ -801,7 +801,72 @@ a.btn{text-decoration:none;display:inline-block;text-align:center}
     }
   }
 
-  // 입력 샘플레이트 → 16kHz 다운샘플(구간 평균) → Int16
+  // ---------- 음성 압축(Opus) ----------
+  // 지원하는 기기끼리는 압축해서 보냄: 16kHz PCM 256kbps → Opus 약 16kbps(데이터 약 1/10)
+  const OPUS_ENC_CFG = { codec: 'opus', sampleRate: RATE, numberOfChannels: 1, bitrate: 16000 };
+  const OPUS_DEC_CFG = { codec: 'opus', sampleRate: RATE, numberOfChannels: 1 };
+  const opusReady = (async () => {
+    try {
+      if (typeof AudioEncoder === 'undefined' || typeof AudioDecoder === 'undefined') return false;
+      const [e, d] = await Promise.all([AudioEncoder.isConfigSupported(OPUS_ENC_CFG), AudioDecoder.isConfigSupported(OPUS_DEC_CFG)]);
+      return !!(e.supported && d.supported);
+    } catch { return false; }
+  })();
+  let OPUS = false; opusReady.then((v) => { OPUS = v; });
+  let txCodec = 'pcm', enc = null, encTs = 0, opusQ = [], stopPending = null;
+  const MAGIC = [0x4f, 0x50, 0x53]; // 'OPS' = 압축 묶음 표시
+  function sendOpus() {
+    if (!opusQ.length) return;
+    const total = opusQ.reduce((n, b) => n + b.length, 0);
+    const out = new Uint8Array(4 + opusQ.length * 2 + total);
+    out.set(MAGIC, 0); out[3] = opusQ.length;
+    let o = 4;
+    for (const b of opusQ) { out[o++] = b.length & 255; out[o++] = b.length >> 8; }
+    for (const b of opusQ) { out.set(b, o); o += b.length; }
+    opusQ = [];
+    socket.emit('audio', out.buffer);
+  }
+  function startEncoder() {
+    try {
+      enc = new AudioEncoder({
+        output: (chunk) => { const b = new Uint8Array(chunk.byteLength); chunk.copyTo(b); opusQ.push(b); if (opusQ.length >= 5) sendOpus(); },
+        error: () => { enc = null; txCodec = 'pcm'; },
+      });
+      enc.configure(OPUS_ENC_CFG); encTs = 0; opusQ = [];
+      return true;
+    } catch { enc = null; return false; }
+  }
+  // 받는 쪽: 보낸 사람별 압축 풀기
+  const decs = new Map();
+  function decoderFor(from) {
+    let d = decs.get(from);
+    if (d && d.state !== 'closed') return d;
+    d = new AudioDecoder({
+      output: (ad) => {
+        try {
+          const n = ad.numberOfFrames, f = new Float32Array(n);
+          ad.copyTo(f, { planeIndex: 0, format: 'f32-planar' });
+          playPcm(from, f, ad.sampleRate);
+        } catch {} finally { ad.close(); }
+      },
+      error: () => decs.delete(from),
+    });
+    d.configure(OPUS_DEC_CFG); d.ts = 0;
+    decs.set(from, d);
+    return d;
+  }
+  function onOpus(from, u8) {
+    if (!OPUS) { if (!S.warnedOpus) { S.warnedOpus = true; toast('이 브라우저는 압축 음성을 재생하지 못해요. 크롬 최신 버전이나 앱을 써 주세요.'); } return; }
+    const n = u8[3]; let o = 4 + n * 2;
+    const d = decoderFor(from);
+    for (let i = 0; i < n; i++) {
+      const len = u8[4 + i * 2] | (u8[5 + i * 2] << 8);
+      const data = u8.subarray(o, o + len); o += len;
+      try { d.decode(new EncodedAudioChunk({ type: 'key', timestamp: d.ts, data })); d.ts += 20000; } catch {}
+    }
+  }
+
+  // 입력 샘플레이트 → 16kHz 다운샘플(구간 평균) → Opus 압축 또는 Int16
   let sendBuf = new Int16Array(640), sendN = 0;
   function onMicChunk(f32) {
     if (!S.talking) { audio.carry = new Float32Array(0); audio.pos = 0; return; }
@@ -809,14 +874,26 @@ a.btn{text-decoration:none;display:inline-block;text-align:center}
     const inp = new Float32Array(audio.carry.length + f32.length);
     inp.set(audio.carry); inp.set(f32, audio.carry.length);
     let pos = audio.pos, peak = 0;
+    const out16 = [];
     while (pos + ratio <= inp.length) {
       const a = Math.floor(pos), b = Math.floor(pos + ratio);
       let s = 0; for (let i = a; i < b; i++) s += inp[i];
       const v = Math.max(-1, Math.min(1, s / Math.max(1, b - a)));
       peak = Math.max(peak, Math.abs(v));
-      sendBuf[sendN++] = v < 0 ? v * 0x8000 : v * 0x7fff;
-      if (sendN === sendBuf.length) { socket.emit('audio', sendBuf.buffer.slice(0)); sendN = 0; }
+      if (txCodec === 'opus' && enc) out16.push(v);
+      else {
+        sendBuf[sendN++] = v < 0 ? v * 0x8000 : v * 0x7fff;
+        if (sendN === sendBuf.length) { socket.emit('audio', sendBuf.buffer.slice(0)); sendN = 0; }
+      }
       pos += ratio;
+    }
+    if (out16.length && enc) {
+      try {
+        const fr = Float32Array.from(out16);
+        const ad = new AudioData({ format: 'f32', sampleRate: RATE, numberOfFrames: fr.length, numberOfChannels: 1, timestamp: encTs, data: fr });
+        enc.encode(ad); ad.close();
+        encTs += Math.round(fr.length / RATE * 1e6);
+      } catch {}
     }
     const keep = Math.floor(pos);
     audio.carry = inp.slice(keep); audio.pos = pos - keep;
@@ -826,20 +903,31 @@ a.btn{text-decoration:none;display:inline-block;text-align:center}
   socket.on('audio', ({ from, data }) => {
     if (!audio.ctx) return;
     if (audio.ctx.state === 'suspended') audio.ctx.resume().catch(() => {});
-    const i16 = new Int16Array(data instanceof ArrayBuffer ? data : data.buffer ? data.buffer.slice(data.byteOffset, data.byteOffset + data.byteLength) : data);
+    const ab = data instanceof ArrayBuffer ? data : data.buffer ? data.buffer.slice(data.byteOffset, data.byteOffset + data.byteLength) : data;
+    const u8 = new Uint8Array(ab);
+    if (u8.length >= 4 && u8[0] === MAGIC[0] && u8[1] === MAGIC[1] && u8[2] === MAGIC[2]) { onOpus(from, u8); return; }
+    const i16 = new Int16Array(ab.byteLength % 2 ? ab.slice(0, ab.byteLength - 1) : ab);
     if (!i16.length) return;
-    const buf = audio.ctx.createBuffer(1, i16.length, RATE);
-    const ch = buf.getChannelData(0); let peak = 0;
-    for (let i = 0; i < i16.length; i++) { ch[i] = i16[i] / 0x8000; peak = Math.max(peak, Math.abs(ch[i])); }
+    const f = new Float32Array(i16.length);
+    for (let i = 0; i < i16.length; i++) f[i] = i16[i] / 0x8000;
+    playPcm(from, f, RATE);
+  });
+
+  // 받은 소리를 끊김 없이 이어 재생(보낸 사람별 120ms 지터 버퍼)
+  function playPcm(from, f32, rate) {
+    if (!audio.ctx || !f32.length) return;
+    const buf = audio.ctx.createBuffer(1, f32.length, rate);
+    const ch = buf.getChannelData(0); ch.set(f32); let peak = 0;
+    for (let i = 0; i < f32.length; i += 8) peak = Math.max(peak, Math.abs(f32[i]));
     const src = audio.ctx.createBufferSource(); src.buffer = buf; src.connect(audio.gain);
     const now = audio.ctx.currentTime;
     let t = audio.play.get(from) || 0;
     if (t < now + 0.02 || t > now + 1.0) t = now + 0.12; // 지터 버퍼 120ms
     src.start(t); audio.play.set(from, t + buf.duration);
     setMeter(peak);
-  });
+  }
 
-  socket.on('talk:start', ({ userId }) => { audio.play.delete(userId); beep('in'); if (navigator.vibrate) navigator.vibrate(30); });
+  socket.on('talk:start', ({ userId }) => { audio.play.delete(userId); const od = decs.get(userId); if (od) { try { od.close(); } catch {} decs.delete(userId); } beep('in'); if (navigator.vibrate) navigator.vibrate(30); });
   socket.on('talk:end', ({ userId }) => { const t = audio.play.get(userId) || 0; setTimeout(() => beep('roger'), Math.max(0, (t - (audio.ctx?.currentTime || 0)) * 1000)); audio.play.delete(userId); setMeter(0); });
 
   function beep(kind) {
@@ -876,10 +964,12 @@ a.btn{text-decoration:none;display:inline-block;text-align:center}
     if (!hadMic) { $('pttBtn').classList.remove('down'); pressing = false; toast('마이크가 켜졌어요. 이제 버튼을 누르고 말하세요.'); return; }
     if (!pressing) { $('pttBtn').classList.remove('down'); return; }
     startPending = true;
+    if (stopPending) await stopPending; // 직전 송신의 마지막 압축 묶음을 다 보낸 뒤 시작
     const r = await emitAck('talk:start');
     startPending = false;
     if (!r.ok) { $('pttBtn').classList.remove('down'); pressing = false; beep('busy'); toast(r.error); return; }
     if (!pressing) { socket.emit('talk:stop'); return; }
+    txCodec = r.codec === 'opus' && OPUS && startEncoder() ? 'opus' : 'pcm';
     S.talking = true; sendN = 0; audio.track.enabled = true; beep('tx');
     if (navigator.vibrate) navigator.vibrate(20);
     updateRadioState();
@@ -889,7 +979,12 @@ a.btn{text-decoration:none;display:inline-block;text-align:center}
     if (!S.talking) return;
     if (sendN > 0) { socket.emit('audio', sendBuf.slice(0, sendN).buffer); sendN = 0; }
     S.talking = false; if (audio.track) audio.track.enabled = false;
-    if (!silent) socket.emit('talk:stop');
+    const e = enc; enc = null;
+    if (e && txCodec === 'opus') {
+      // 압축기에 남은 소리까지 보내고 송신 종료
+      stopPending = e.flush().catch(() => {}).then(() => { sendOpus(); try { e.close(); } catch {} if (!silent) socket.emit('talk:stop'); stopPending = null; });
+    } else if (!silent) socket.emit('talk:stop');
+    txCodec = 'pcm';
     updateRadioState();
   }
   const ptt = $('pttBtn');

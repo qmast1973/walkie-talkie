@@ -238,7 +238,7 @@ setInterval(() => {
 io.on('connection', (socket) => {
   const ack = (cb, payload) => typeof cb === 'function' && cb(payload);
 
-  socket.on('hello', ({ nick, key } = {}, cb) => {
+  socket.on('hello', ({ nick, key, caps } = {}, cb) => {
     nick = clean(nick, 16);
     if (!nick) return ack(cb, { ok: false, error: '닉네임을 입력해 주세요.' });
     key = typeof key === 'string' && /^[A-Za-z0-9_-]{16,64}$/.test(key) ? key : null;
@@ -283,6 +283,7 @@ io.on('connection', (socket) => {
     u.nick = nick;
     u.socketId = socket.id;
     u.online = true;
+    u.opus = !!(caps && caps.opus); // 압축 음성(Opus)을 보내고 받을 수 있는지
     socket.data.uid = u.id;
     socket.join('u:' + u.id);
     if (ghost && ghost.lastRoomId && rooms.has(ghost.lastRoomId)) enterRoom(u, rooms.get(ghost.lastRoomId), ghost.lastChannelId);
@@ -463,7 +464,10 @@ io.on('connection', (socket) => {
     ch.talkStarted = Date.now();
     socket.to(`ch:${ch.id}`).emit('talk:start', { channelId: ch.id, userId: u.id, nick: u.nick });
     broadcastRoom(room);
-    ack(cb, { ok: true });
+    // 같은 채널의 모든 사람이 압축 음성을 들을 수 있을 때만 Opus로 보내게 함(데이터 약 1/10)
+    const listeners = roomMembers(room).filter((m) => m.channelId === ch.id && m.id !== u.id && m.online);
+    const codec = u.opus && listeners.every((m) => m.opus) ? 'opus' : 'pcm';
+    ack(cb, { ok: true, codec });
   });
 
   socket.on('talk:stop', () => {

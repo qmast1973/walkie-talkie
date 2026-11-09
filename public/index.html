@@ -240,7 +240,7 @@ a.btn{text-decoration:none;display:inline-block;text-align:center}
 <div class="wrap">
   <header class="top">
     <div class="brand"><span class="ant" aria-hidden="true"></span><h1>모두의 무전기</h1></div>
-    <div class="status"><span class="dot" id="connDot"></span><span id="connText">연결 중…</span><a class="help-link" href="/help.html">도움말</a></div>
+    <div class="status"><span class="dot" id="connDot"></span><span id="connText">연결 중…</span><a class="help-link" href="/help.html">도움말</a><button class="help-link" id="quitBtn" type="button" hidden>완전 종료</button></div>
   </header>
 
   <!-- 1. 입장 -->
@@ -426,7 +426,39 @@ a.btn{text-decoration:none;display:inline-block;text-align:center}
 (() => {
   'use strict';
   const $ = (id) => document.getElementById(id);
-  const socket = io({ transports: ['websocket', 'polling'] });
+  // 안드로이드 앱(1.0.114 이상): 서버 연결·소리는 앱 안쪽(NativeSocket)이 유지 → 화면을 닫아도 무전이 계속됨
+  const NATIVE_SOCK = !!(window.WalkieNative && typeof window.WalkieNative.sockEmit === 'function');
+  function nativeSocket() {
+    const handlers = {}, acks = new Map(); let seq = 0;
+    const sock = {
+      connected: false,
+      on(ev, fn) { (handlers[ev] = handlers[ev] || []).push(fn); return sock; },
+      once(ev, fn) { const w = (d) => { handlers[ev] = (handlers[ev] || []).filter((f) => f !== w); fn(d); }; return sock.on(ev, w); },
+      emit(ev, payload, cb) {
+        if (typeof payload === 'function') { cb = payload; payload = undefined; }
+        const id = cb ? ++seq : 0; if (cb) acks.set(id, cb);
+        window.WalkieNative.sockEmit(ev, JSON.stringify(payload === undefined ? null : payload), id);
+        return sock;
+      },
+      timeout(ms) {
+        return { emit: (ev, payload, cb) => {
+          let done = false; const t = setTimeout(() => { done = true; cb(new Error('timeout')); }, ms);
+          sock.emit(ev, payload, (r) => { if (done) return; clearTimeout(t); cb(null, r); });
+        } };
+      },
+      connect() { window.WalkieNative.sockAttach(); },
+      disconnect() {},
+    };
+    window.__wtSock = {
+      dispatch(ev, d) {
+        if (ev === 'connect') sock.connected = true; else if (ev === 'disconnect') sock.connected = false;
+        for (const fn of (handlers[ev] || []).slice()) { try { fn(d); } catch (e) { console.error(e); } }
+      },
+      ack(id, r) { const cb = acks.get(id); acks.delete(id); if (cb) cb(r); },
+    };
+    return sock;
+  }
+  const socket = NATIVE_SOCK ? nativeSocket() : io({ transports: ['websocket', 'polling'] });
   // 안드로이드 앱 안: window.WalkieNative(기본 연결) 우선, 없으면 Capacitor 연결 사용
   const NATIVE = !!(window.WalkieNative || (window.Capacitor && (window.Capacitor.isNativePlatform?.() || window.Capacitor.getPlatform?.() === 'android')));
   const nativeCall = (method, opts = {}) => {
@@ -720,7 +752,7 @@ a.btn{text-decoration:none;display:inline-block;text-align:center}
     led.className = 'led' + (S.talking ? ' tx' : other ? ' rx' : '');
     $('lcdMode').textContent = S.talking ? 'TX' : other ? 'RX' : 'STBY';
     $('lcdState').textContent = S.talking ? '송신 중…' : other ? `◀ ${nickOf(other)}` : '대기 중';
-    $('pttSub').textContent = !audio.mic ? '마이크 켜기' : S.talking ? '말하는 중' : other ? '수신 중' : '누르고 말하기';
+    $('pttSub').textContent = !audio.mic && !NATIVE_SOCK ? '마이크 켜기' : S.talking ? '말하는 중' : other ? '수신 중' : '누르고 말하기';
     ptt.disabled = !!other && !S.talking;
     syncNative();
   }
@@ -779,6 +811,7 @@ a.btn{text-decoration:none;display:inline-block;text-align:center}
   const audio = { ctx: null, mic: null, node: null, gain: null, track: null, play: new Map(), carry: new Float32Array(0), pos: 0 };
 
   async function ensureAudio() {
+    if (NATIVE_SOCK) return; // 앱에서는 소리를 앱 안쪽에서 처리
     if (!audio.ctx) {
       const AC = window.AudioContext || window.webkitAudioContext;
       audio.ctx = new AC();
@@ -1043,11 +1076,26 @@ a.btn{text-decoration:none;display:inline-block;text-align:center}
   { const v = Number(store.get('wt.vol')); if (v > 0 && v <= 4) $('vol').value = v; }
   const showVol = () => { $('volPct').textContent = Math.round(Number($('vol').value) * 100) + '%'; };
   showVol();
-  $('vol').addEventListener('input', () => { store.set('wt.vol', $('vol').value); showVol(); });
+  const syncNativeVol = () => { if (NATIVE_SOCK) try { window.WalkieNative.sockVol(Number($('vol').value)); } catch {} };
+  syncNativeVol();
+  $('vol').addEventListener('input', () => { store.set('wt.vol', $('vol').value); showVol(); syncNativeVol(); });
 
   // ---------- PTT ----------
   let pressing = false, startPending = false;
+  // 앱: 송신은 앱 안쪽에서(마이크·압축·서버 송신권), 결과는 'native:talk'로 받음
+  socket.on('native:talk', (d) => {
+    S.talking = !!(d && d.talking);
+    if (!S.talking) { pressing = false; $('pttBtn').classList.remove('down'); }
+    if (d && d.error) toast(d.error);
+    updateRadioState();
+  });
   async function startTalking() {
+    if (NATIVE_SOCK) {
+      if (S.talking || pressing || !S.room) return;
+      pressing = true; $('pttBtn').classList.add('down');
+      window.WalkieNative.sockPtt(true);
+      return;
+    }
     if (S.talking || startPending) return;
     pressing = true; $('pttBtn').classList.add('down');
     const hadMic = !!audio.mic;
@@ -1066,6 +1114,11 @@ a.btn{text-decoration:none;display:inline-block;text-align:center}
     updateRadioState();
   }
   function stopTalking(silent) {
+    if (NATIVE_SOCK) {
+      pressing = false; $('pttBtn').classList.remove('down');
+      if (!silent) window.WalkieNative.sockPtt(false);
+      return;
+    }
     pressing = false; $('pttBtn').classList.remove('down');
     if (!S.talking) return;
     if (sendN > 0) { socket.emit('audio', sendBuf.slice(0, sendN).buffer); sendN = 0; }
@@ -1089,8 +1142,9 @@ a.btn{text-decoration:none;display:inline-block;text-align:center}
   const typing = () => ['INPUT', 'TEXTAREA'].includes(document.activeElement?.tagName) || document.querySelector('dialog[open]');
   window.addEventListener('keydown', (e) => { if (e.code === 'Space' && !e.repeat && S.room && !typing()) { e.preventDefault(); startTalking(); } });
   window.addEventListener('keyup', (e) => { if (e.code === 'Space' && S.room && !typing()) { e.preventDefault(); stopTalking(); } });
-  window.addEventListener('blur', () => stopTalking());
-  document.addEventListener('visibilitychange', () => { if (document.hidden) stopTalking(); else if (S.room) requestWakeLock(); });
+  // 웹에서는 화면이 가려지면 송신을 끊음(앱에서는 화면을 꺼도 이어폰 버튼으로 계속 송신 가능)
+  window.addEventListener('blur', () => { if (!NATIVE_SOCK) stopTalking(); });
+  document.addEventListener('visibilitychange', () => { if (document.hidden) { if (!NATIVE_SOCK) stopTalking(); } else if (S.room) requestWakeLock(); });
 
   // ---------- 안드로이드 앱 연동 ----------
   // 앱(Capacitor) 안에서 열렸을 때만 동작: 알림 문구 갱신, 볼륨(-) 버튼·이어폰 버튼 송신
@@ -1156,11 +1210,22 @@ a.btn{text-decoration:none;display:inline-block;text-align:center}
   $('installClose').addEventListener('click', () => { $('installBox').hidden = true; store.set(isAndroid ? 'wt.apkDismissed' : 'wt.installDismissed', '1'); });
 
   // 화면(탭·앱)을 닫으면 바로 연결을 끊어 명단에 이름이 남지 않게 함. 뒤로가기 캐시에서 돌아오면 다시 연결
-  window.addEventListener('pagehide', () => { stopTalking(); socket.disconnect(); });
+  window.addEventListener('pagehide', () => { if (NATIVE_SOCK) return; stopTalking(); socket.disconnect(); });
   window.addEventListener('pageshow', (e) => { if (e.persisted && !socket.connected) socket.connect(); });
+
+  // 완전 종료(앱): 두 번 눌러 확인
+  try { if (window.WalkieNative && typeof window.WalkieNative.quitApp === 'function') $('quitBtn').hidden = false; } catch {}
+  $('quitBtn').addEventListener('click', (e) => {
+    const b = e.currentTarget;
+    if (!b.dataset.armed) { b.dataset.armed = '1'; b.textContent = '한 번 더 누르면 종료'; setTimeout(() => { delete b.dataset.armed; b.textContent = '완전 종료'; }, 3000); return; }
+    try { window.WalkieNative.quitApp(); } catch {}
+  });
 
   let wakeLock = null;
   async function requestWakeLock() { try { wakeLock = await navigator.wakeLock?.request('screen'); } catch {} }
+
+  // 모든 이벤트 연결을 마친 뒤 앱의 무전 연결에 붙음(이미 연결돼 있으면 바로 'connect')
+  if (NATIVE_SOCK) window.WalkieNative.sockAttach();
 })();
 </script>
 </body>

@@ -100,6 +100,22 @@ public class MainActivity extends BridgeActivity {
     }
 
     @Override
+    public void onDestroy() {
+        // 화면만 닫힘: 무전 연결은 계속 유지(완전 종료는 quitApp)
+        try { if (NativeSocket.exists()) NativeSocket.get(this).detach(getBridge().getWebView()); } catch (Exception ignored) {}
+        super.onDestroy();
+    }
+
+    /** 완전 종료: 무전 연결·오프라인·서비스를 모두 끄고 앱 종료 */
+    void quitApp() {
+        try { NativeSocket.shutdown(); } catch (Exception ignored) {}
+        try { OfflineEngine.get(this).stop(); } catch (Exception ignored) {}
+        WalkieService.stop(this);
+        finishAndRemoveTask();
+        android.os.Process.killProcess(android.os.Process.myPid());
+    }
+
+    @Override
     public void onPause() {
         super.onPause();
         keepWebViewRunning();

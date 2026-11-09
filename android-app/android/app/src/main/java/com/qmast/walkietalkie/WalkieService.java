@@ -85,6 +85,8 @@ public class WalkieService extends Service {
                             if (OfflineEngine.isActive()) {
                                 OfflineEngine e = OfflineEngine.get(WalkieService.this);
                                 e.setTalking(!e.isTalking());
+                            } else if (WalkiePlugin.pttKeyEnabled && NativeSocket.exists()) {
+                                NativeSocket.get(WalkieService.this).toggle(); // 화면을 닫아도 이어폰 버튼 송신
                             } else if (WalkiePlugin.pttKeyEnabled) WalkiePlugin.emitToggle();
                             return true;
                         }
@@ -105,6 +107,8 @@ public class WalkieService extends Service {
     @Override
     public int onStartCommand(Intent intent, int flags, int startId) {
         if (intent != null && ACTION_STOP.equals(intent.getAction())) {
+            try { NativeSocket.shutdown(); } catch (Exception ignored) {}
+            try { OfflineEngine.get(this).stop(); } catch (Exception ignored) {}
             stopForeground(true);
             stopSelf();
             // 앱 전체 종료(화면 포함)
@@ -149,7 +153,7 @@ public class WalkieService extends Service {
                 .setPriority(NotificationCompat.PRIORITY_LOW)
                 .setCategory(NotificationCompat.CATEGORY_SERVICE)
                 .setContentIntent(openPi)
-                .addAction(0, "종료", stopPi)
+                .addAction(0, "완전 종료", stopPi)
                 .build();
     }
 

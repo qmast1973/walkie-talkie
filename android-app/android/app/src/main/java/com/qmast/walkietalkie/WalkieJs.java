@@ -48,6 +48,33 @@ public class WalkieJs {
         }
     }
 
+    // ---------- 온라인 무전 연결(앱 안쪽에서 유지) ----------
+    @JavascriptInterface
+    public void sockAttach() {
+        NativeSocket.get(act).attach(act.getBridge().getWebView());
+    }
+
+    @JavascriptInterface
+    public void sockEmit(String ev, String json, int ackId) {
+        NativeSocket.get(act).emit(ev, json, ackId);
+    }
+
+    @JavascriptInterface
+    public void sockPtt(boolean on) {
+        NativeSocket.get(act).ptt(on);
+    }
+
+    @JavascriptInterface
+    public void sockVol(float v) {
+        NativeSocket.get(act).setVolume(v);
+    }
+
+    /** 완전 종료: 무전 연결·서비스·화면 모두 끔 */
+    @JavascriptInterface
+    public void quitApp() {
+        act.runOnUiThread(act::quitApp);
+    }
+
     // ---------- 화면 전환 ----------
     @JavascriptInterface
     public void openOffline() {

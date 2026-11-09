@@ -284,6 +284,7 @@ io.on('connection', (socket) => {
     u.socketId = socket.id;
     u.online = true;
     u.opus = !!(caps && caps.opus); // 압축 음성(Opus)을 보내고 받을 수 있는지
+    u.opus2 = !!(caps && caps.opus2); // 고음질(48kHz 32kbps) 압축 음성
     socket.data.uid = u.id;
     socket.join('u:' + u.id);
     if (ghost && ghost.lastRoomId && rooms.has(ghost.lastRoomId)) enterRoom(u, rooms.get(ghost.lastRoomId), ghost.lastChannelId);
@@ -466,7 +467,8 @@ io.on('connection', (socket) => {
     broadcastRoom(room);
     // 같은 채널의 모든 사람이 압축 음성을 들을 수 있을 때만 Opus로 보내게 함(데이터 약 1/10)
     const listeners = roomMembers(room).filter((m) => m.channelId === ch.id && m.id !== u.id && m.online);
-    const codec = u.opus && listeners.every((m) => m.opus) ? 'opus' : 'pcm';
+    // 모두 고음질을 지원하면 고음질, 아니면 기본 압축, 그것도 안 되면 무압축
+    const codec = u.opus2 && listeners.every((m) => m.opus2) ? 'opus2' : u.opus && listeners.every((m) => m.opus) ? 'opus' : 'pcm';
     ack(cb, { ok: true, codec });
   });
 

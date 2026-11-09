@@ -496,7 +496,7 @@ a.btn{text-decoration:none;display:inline-block;text-align:center}
     show('viewEntry');
   });
   async function hello(nick) {
-    const r = await emitAck('hello', { nick, key: ss.get('wt.key'), caps: { opus: await opusReady } });
+    const r = await emitAck('hello', { nick, key: ss.get('wt.key'), caps: { opus: await opusReady, opus2: await opus2Ready } });
     if (!r.ok) return r;
     ss.set('wt.key', r.key);
     let appInfo = '';
@@ -824,34 +824,56 @@ a.btn{text-decoration:none;display:inline-block;text-align:center}
     } catch { return false; }
   })();
   let OPUS = false; opusReady.then((v) => { OPUS = v; });
+  // 고음질(HQ): 마이크 원래 샘플레이트(보통 48kHz) 그대로 32kbps Opus. 받는 쪽이 모두 지원할 때만 사용
+  const HQ_RATES = [48000, 24000, 16000], HQ_BITRATE = 32000;
+  const opus2Ready = (async () => {
+    try {
+      if (!(await opusReady)) return false;
+      const [e, d] = await Promise.all([
+        AudioEncoder.isConfigSupported({ codec: 'opus', sampleRate: 48000, numberOfChannels: 1, bitrate: HQ_BITRATE }),
+        AudioDecoder.isConfigSupported({ codec: 'opus', sampleRate: 48000, numberOfChannels: 1 })]);
+      return !!(e.supported && d.supported);
+    } catch { return false; }
+  })();
+  let OPUS2 = false; opus2Ready.then((v) => { OPUS2 = v; });
+  let encRate = RATE; // 지금 압축기의 샘플레이트
   let txCodec = 'pcm', enc = null, encTs = 0, opusQ = [], stopPending = null;
-  const MAGIC = [0x4f, 0x50, 0x53]; // 'OPS' = 압축 묶음 표시
+  const MAGIC = [0x4f, 0x50, 0x53]; // 'OPS' = 압축 묶음(16kHz)
+  const MAGIC2 = [0x4f, 0x50, 0x32]; // 'OP2' = 고음질 묶음(다음 바이트: 샘플레이트 코드)
   function sendOpus() {
     if (!opusQ.length) return;
     const total = opusQ.reduce((n, b) => n + b.length, 0);
-    const out = new Uint8Array(4 + opusQ.length * 2 + total);
-    out.set(MAGIC, 0); out[3] = opusQ.length;
-    let o = 4;
+    const hq = encRate !== RATE, head = hq ? 5 : 4;
+    const out = new Uint8Array(head + opusQ.length * 2 + total);
+    if (hq) { out.set(MAGIC2, 0); out[3] = HQ_RATES.indexOf(encRate); out[4] = opusQ.length; }
+    else { out.set(MAGIC, 0); out[3] = opusQ.length; }
+    let o = head;
     for (const b of opusQ) { out[o++] = b.length & 255; out[o++] = b.length >> 8; }
     for (const b of opusQ) { out.set(b, o); o += b.length; }
     opusQ = [];
     socket.emit('audio', out.buffer);
   }
-  function startEncoder() {
+  function startEncoder(hq) {
     try {
       enc = new AudioEncoder({
         output: (chunk) => { const b = new Uint8Array(chunk.byteLength); chunk.copyTo(b); opusQ.push(b); if (opusQ.length >= 5) sendOpus(); },
         error: () => { enc = null; txCodec = 'pcm'; },
       });
-      enc.configure(OPUS_ENC_CFG); encTs = 0; opusQ = [];
+      // 고음질: 마이크가 48/24/16kHz면 그대로, 아니면(예: PC 44.1kHz) 48kHz로 변환해서 압축
+      const rate = hq ? (HQ_RATES.includes(audio.ctx.sampleRate) ? audio.ctx.sampleRate : 48000) : RATE;
+      hqRs = { pos: 0, last: 0 };
+      encRate = rate;
+      enc.configure(rate === RATE ? OPUS_ENC_CFG : { codec: 'opus', sampleRate: rate, numberOfChannels: 1, bitrate: HQ_BITRATE });
+      encTs = 0; opusQ = [];
       return true;
     } catch { enc = null; return false; }
   }
   // 받는 쪽: 보낸 사람별 압축 풀기
   const decs = new Map();
-  function decoderFor(from) {
+  function decoderFor(from, rate = RATE) {
     let d = decs.get(from);
-    if (d && d.state !== 'closed') return d;
+    if (d && d.state !== 'closed' && d.rate === rate) return d;
+    if (d) { try { d.close(); } catch {} }
     d = new AudioDecoder({
       output: (ad) => {
         try {
@@ -862,16 +884,16 @@ a.btn{text-decoration:none;display:inline-block;text-align:center}
       },
       error: () => decs.delete(from),
     });
-    d.configure(OPUS_DEC_CFG); d.ts = 0;
+    d.configure({ codec: 'opus', sampleRate: rate, numberOfChannels: 1 }); d.ts = 0; d.rate = rate;
     decs.set(from, d);
     return d;
   }
-  function onOpus(from, u8) {
+  function onOpus(from, u8, hq) {
     if (!OPUS) { if (!S.warnedOpus) { S.warnedOpus = true; toast('이 브라우저는 압축 음성을 재생하지 못해요. 크롬 최신 버전이나 앱을 써 주세요.'); } return; }
-    const n = u8[3]; let o = 4 + n * 2;
-    const d = decoderFor(from);
+    const head = hq ? 5 : 4, n = u8[head - 1]; let o = head + n * 2;
+    const d = decoderFor(from, hq ? (HQ_RATES[u8[3]] || 48000) : RATE);
     for (let i = 0; i < n; i++) {
-      const len = u8[4 + i * 2] | (u8[5 + i * 2] << 8);
+      const len = u8[head + i * 2] | (u8[head + 1 + i * 2] << 8);
       const data = u8.subarray(o, o + len); o += len;
       try { d.decode(new EncodedAudioChunk({ type: 'key', timestamp: d.ts, data })); d.ts += 20000; } catch {}
     }
@@ -879,16 +901,42 @@ a.btn{text-decoration:none;display:inline-block;text-align:center}
 
   // 입력 샘플레이트 → 16kHz 다운샘플(구간 평균) → Opus 압축 또는 Int16
   let sendBuf = new Int16Array(640), sendN = 0;
+  let hqRs = { pos: 0, last: 0 };
+  function resampleHq(inp, from, to) {
+    const step = from / to, out = [];
+    let pos = hqRs.pos; // 이전 묶음 마지막 샘플(-1 위치) 기준 이어 붙이기
+    while (pos < inp.length - 1) {
+      const i = Math.floor(pos), t = pos - i;
+      const a = i < 0 ? hqRs.last : inp[i], b = inp[i + 1];
+      out.push(a + (b - a) * t);
+      pos += step;
+    }
+    hqRs.pos = pos - inp.length; hqRs.last = inp[inp.length - 1];
+    return Float32Array.from(out);
+  }
   let txAgc = 2;
   function onMicChunk(f32) {
     if (!S.talking) { audio.carry = new Float32Array(0); audio.pos = 0; return; }
-    // 보내는 쪽 자동 음량: 말소리를 일정하게 크게(최대 6배), 큰 소리는 바로 줄여 찢어짐 방지
+    // 보내는 쪽 자동 음량: 작은 목소리만 부드럽게 키움(최대 3배), 큰 소리는 바로 줄여 찢어짐 방지
     { let pk = 0; for (let i = 0; i < f32.length; i++) pk = Math.max(pk, Math.abs(f32[i]));
-      const want = pk > 0.01 ? Math.min(6, 0.8 / pk) : txAgc;
-      txAgc = want < txAgc ? want : txAgc * 0.85 + want * 0.15;
+      const want = pk > 0.02 ? Math.min(3, 0.7 / pk) : txAgc;
+      txAgc = want < txAgc ? want : txAgc * 0.97 + want * 0.03;
       const g = new Float32Array(f32.length);
       for (let i = 0; i < f32.length; i++) g[i] = Math.max(-1, Math.min(1, f32[i] * txAgc));
       f32 = g; }
+    if (txCodec === 'opus' && enc && encRate !== RATE) {
+      // 고음질: 샘플레이트가 같으면 그대로, 다르면 선형 보간으로 변환 후 압축
+      let peak = 0; for (let i = 0; i < f32.length; i += 4) peak = Math.max(peak, Math.abs(f32[i]));
+      if (audio.ctx.sampleRate !== encRate) f32 = resampleHq(f32, audio.ctx.sampleRate, encRate);
+      if (!f32.length) return;
+      try {
+        const ad = new AudioData({ format: 'f32', sampleRate: encRate, numberOfFrames: f32.length, numberOfChannels: 1, timestamp: encTs, data: f32 });
+        enc.encode(ad); ad.close();
+        encTs += Math.round(f32.length / encRate * 1e6);
+      } catch {}
+      setMeter(peak);
+      return;
+    }
     const ratio = audio.ctx.sampleRate / RATE;
     const inp = new Float32Array(audio.carry.length + f32.length);
     inp.set(audio.carry); inp.set(f32, audio.carry.length);
@@ -924,7 +972,8 @@ a.btn{text-decoration:none;display:inline-block;text-align:center}
     if (audio.ctx.state === 'suspended') audio.ctx.resume().catch(() => {});
     const ab = data instanceof ArrayBuffer ? data : data.buffer ? data.buffer.slice(data.byteOffset, data.byteOffset + data.byteLength) : data;
     const u8 = new Uint8Array(ab);
-    if (u8.length >= 4 && u8[0] === MAGIC[0] && u8[1] === MAGIC[1] && u8[2] === MAGIC[2]) { onOpus(from, u8); return; }
+    if (u8.length >= 4 && u8[0] === MAGIC[0] && u8[1] === MAGIC[1] && u8[2] === MAGIC[2]) { onOpus(from, u8, false); return; }
+    if (u8.length >= 5 && u8[0] === MAGIC2[0] && u8[1] === MAGIC2[1] && u8[2] === MAGIC2[2]) { onOpus(from, u8, true); return; }
     const i16 = new Int16Array(ab.byteLength % 2 ? ab.slice(0, ab.byteLength - 1) : ab);
     if (!i16.length) return;
     const f = new Float32Array(i16.length);
@@ -934,16 +983,20 @@ a.btn{text-decoration:none;display:inline-block;text-align:center}
 
   // 받은 소리를 끊김 없이 이어 재생(보낸 사람별 120ms 지터 버퍼)
   // 받는 쪽 소리 키우기: 말소리 평균 크기(RMS)를 유튜브 수준(약 -10dBFS)으로 맞추고
-  // 부드러운 리미터(tanh)로 찢어짐 없이 꽉 차게. 말 사이 잡음은 키우지 않음. 음량 100% = 유튜브 수준
+  // 깨끗한 리미터로 찢어짐 없이. 말 사이 잡음은 키우지 않음. 음량 200% = 유튜브 수준
   const rxGain = new Map();
   function louden(from, f) {
     let s = 0; for (let i = 0; i < f.length; i++) s += f[i] * f[i];
     const rms = Math.sqrt(s / f.length);
-    let g = rxGain.get(from) ?? 4;
-    if (rms > 0.004) { const want = Math.min(20, 0.30 / rms); g = want < g ? g * 0.5 + want * 0.5 : g * 0.9 + want * 0.1; rxGain.set(from, g); }
-    const vol = Number($('vol').value), gate = rms < 0.006 ? rms / 0.006 : 1, k = 1.3 * g * vol;
+    let g = rxGain.get(from) ?? 3;
+    if (rms > 0.004) { const want = Math.min(16, 0.22 / rms); g = want < g ? g * 0.6 + want * 0.4 : g * 0.95 + want * 0.05; rxGain.set(from, g); }
+    const vol = Number($('vol').value), gate = rms < 0.006 ? rms / 0.006 : 1, k = g * vol;
+    // 깨끗한 리미터: 0.6까지는 그대로, 그 위만 부드럽게 눌러 최대 0.98(뭉개짐 최소화)
     const out = new Float32Array(f.length);
-    for (let i = 0; i < f.length; i++) out[i] = 0.97 * Math.tanh(k * f[i]) * gate;
+    for (let i = 0; i < f.length; i++) {
+      const x = f[i] * k, a = Math.abs(x), y = a <= 0.6 ? a : 0.6 + 0.38 * Math.tanh((a - 0.6) / 0.38);
+      out[i] = (x < 0 ? -y : y) * gate;
+    }
     return out;
   }
 
@@ -1007,7 +1060,7 @@ a.btn{text-decoration:none;display:inline-block;text-align:center}
     startPending = false;
     if (!r.ok) { $('pttBtn').classList.remove('down'); pressing = false; beep('busy'); toast(r.error); return; }
     if (!pressing) { socket.emit('talk:stop'); return; }
-    txCodec = r.codec === 'opus' && OPUS && startEncoder() ? 'opus' : 'pcm';
+    txCodec = (r.codec === 'opus' || r.codec === 'opus2') && OPUS && startEncoder(r.codec === 'opus2' && OPUS2) ? 'opus' : 'pcm';
     S.talking = true; sendN = 0; audio.track.enabled = true; beep('tx');
     if (navigator.vibrate) navigator.vibrate(20);
     updateRadioState();

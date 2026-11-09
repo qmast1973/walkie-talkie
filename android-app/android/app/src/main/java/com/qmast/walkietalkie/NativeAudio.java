@@ -93,7 +93,7 @@ public class NativeAudio {
 
     // ---------- 재생 ----------
     private void startPlayback() {
-        try { tones = new ToneGenerator(AudioManager.STREAM_MUSIC, 70); } catch (Exception ignored) {}
+        try { tones = new ToneGenerator(AudioManager.STREAM_MUSIC, 25) /* 목소리보다 작게 */; } catch (Exception ignored) {}
         int min = AudioTrack.getMinBufferSize(RATE, AudioFormat.CHANNEL_OUT_MONO, AudioFormat.ENCODING_PCM_16BIT);
         track = new AudioTrack.Builder()
                 .setAudioAttributes(new AudioAttributes.Builder().setUsage(AudioAttributes.USAGE_MEDIA).setContentType(AudioAttributes.CONTENT_TYPE_SPEECH).build())
@@ -273,6 +273,7 @@ public class NativeAudio {
                 enc.configure(f, null, null, MediaCodec.CONFIGURE_FLAG_ENCODE);
                 enc.start();
             }
+            Thread.sleep(180); // 송신 신호음이 마이크로 들어가 상대에게 가지 않게
             rec.startRecording();
             short[] buf = new short[FRAME];
             MediaCodec.BufferInfo info = new MediaCodec.BufferInfo();

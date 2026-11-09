@@ -393,7 +393,7 @@ public class OfflineEngine {
 
     // ---------- 소리 ----------
     private void startAudio() {
-        try { tones = new ToneGenerator(AudioManager.STREAM_MUSIC, 70); } catch (Exception ignored) {}
+        try { tones = new ToneGenerator(AudioManager.STREAM_MUSIC, 25) /* 목소리보다 작게 */; } catch (Exception ignored) {}
         int min = AudioTrack.getMinBufferSize(RATE, AudioFormat.CHANNEL_OUT_MONO, AudioFormat.ENCODING_PCM_16BIT);
         track = new AudioTrack.Builder()
                 .setAudioAttributes(new AudioAttributes.Builder().setUsage(AudioAttributes.USAGE_MEDIA).setContentType(AudioAttributes.CONTENT_TYPE_SPEECH).build())
@@ -435,6 +435,7 @@ public class OfflineEngine {
                     rec = new AudioRecord(MediaRecorder.AudioSource.MIC, RATE, AudioFormat.CHANNEL_IN_MONO, AudioFormat.ENCODING_PCM_16BIT, Math.max(min, FRAME * 4));
                     try { if (android.media.audiofx.NoiseSuppressor.isAvailable()) { android.media.audiofx.NoiseSuppressor ns = android.media.audiofx.NoiseSuppressor.create(rec.getAudioSessionId()); if (ns != null) ns.setEnabled(true); } } catch (Exception ignored) {}
                     try { if (android.media.audiofx.AutomaticGainControl.isAvailable()) { android.media.audiofx.AutomaticGainControl agc = android.media.audiofx.AutomaticGainControl.create(rec.getAudioSessionId()); if (agc != null) agc.setEnabled(true); } } catch (Exception ignored) {}
+                    Thread.sleep(180); // 송신 신호음이 마이크로 들어가 상대에게 가지 않게
                     rec.startRecording();
                     main.post(() -> SpeakerRoute.get(ctx).apply());
                 }

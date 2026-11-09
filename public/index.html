@@ -947,9 +947,10 @@ a.btn{text-decoration:none;display:inline-block;text-align:center}
     hqRs.pos = pos - inp.length; hqRs.last = inp[inp.length - 1];
     return Float32Array.from(out);
   }
-  let txAgc = 2;
+  let txAgc = 2, txMuteUntil = 0;
   function onMicChunk(f32) {
     if (!S.talking) { audio.carry = new Float32Array(0); audio.pos = 0; return; }
+    if (performance.now() < txMuteUntil) return;
     // 보내는 쪽 자동 음량: 작은 목소리만 부드럽게 키움(최대 3배), 큰 소리는 바로 줄여 찢어짐 방지
     { let pk = 0; for (let i = 0; i < f32.length; i++) pk = Math.max(pk, Math.abs(f32[i]));
       const want = pk > 0.02 ? Math.min(3, 0.7 / pk) : txAgc;
@@ -1056,8 +1057,9 @@ a.btn{text-decoration:none;display:inline-block;text-align:center}
     const tones = kind === 'roger' ? [[1200, 0, .07], [900, .08, .09]] : kind === 'tx' ? [[1000, 0, .05]] : kind === 'busy' ? [[420, 0, .12], [420, .18, .12]] : [[700, 0, .05], [1100, .06, .05]];
     for (const [f, d, len] of tones) {
       const o = ctx.createOscillator(), g = ctx.createGain();
-      o.type = 'square'; o.frequency.value = f;
-      g.gain.setValueAtTime(0.0001, t + d); g.gain.exponentialRampToValueAtTime(0.08, t + d + 0.005); g.gain.exponentialRampToValueAtTime(0.0001, t + d + len);
+      // 부드럽고 작은 신호음(목소리보다 작게)
+      o.type = 'sine'; o.frequency.value = f;
+      g.gain.setValueAtTime(0.0001, t + d); g.gain.exponentialRampToValueAtTime(0.03, t + d + 0.01); g.gain.exponentialRampToValueAtTime(0.0001, t + d + len);
       o.connect(g); g.connect(audio.gain); o.start(t + d); o.stop(t + d + len + 0.02);
     }
   }
@@ -1110,6 +1112,7 @@ a.btn{text-decoration:none;display:inline-block;text-align:center}
     if (!pressing) { socket.emit('talk:stop'); return; }
     txCodec = (r.codec === 'opus' || r.codec === 'opus2') && OPUS && startEncoder(r.codec === 'opus2' && OPUS2) ? 'opus' : 'pcm';
     S.talking = true; sendN = 0; audio.track.enabled = true; beep('tx');
+    txMuteUntil = performance.now() + 180; // 신호음이 마이크로 들어가 상대에게 가지 않게 잠깐 뒤부터 송신
     if (navigator.vibrate) navigator.vibrate(20);
     updateRadioState();
   }
